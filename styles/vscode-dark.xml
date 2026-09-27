@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="vscode-dark" _name="VS Code Dark+" version="1.0">
+  <author>Ahmad Odeh</author>
+  <_description>Matches VS Code's default Dark+ theme colors</_description>
+
+  <!-- VS Code Dark+ palette -->
+  <color name="bg"             value="#1E1E1E"/>
+  <color name="fg"             value="#D4D4D4"/>
+  <color name="line-num-fg"    value="#858585"/>
+  <color name="line-num-bg"    value="#1E1E1E"/>
+  <color name="cur-line"       value="#2A2A2A"/>
+  <color name="selection"      value="#264F78"/>
+  <color name="cursor"         value="#AEAFAD"/>
+
+  <color name="blue"           value="#569CD6"/>  <!-- keywords -->
+  <color name="light-blue"     value="#9CDCFE"/>  <!-- variables/identifiers -->
+  <color name="cyan"           value="#4EC9B0"/>  <!-- types/classes -->
+  <color name="green"          value="#6A9955"/>  <!-- comments -->
+  <color name="orange"         value="#CE9178"/>  <!-- strings -->
+  <color name="light-yellow"   value="#DCDCAA"/>  <!-- functions -->
+  <color name="yellow-gold"    value="#D7BA7D"/>
+  <color name="purple"         value="#C586C0"/>  <!-- control flow -->
+  <color name="number-green"   value="#B5CEA8"/>  <!-- numbers -->
+  <color name="red"            value="#F44747"/>  <!-- errors -->
+  <color name="gray"           value="#6E7681"/>
+
+  <style name="text"                    foreground="fg" background="bg"/>
+  <style name="selection"               background="selection"/>
+  <style name="cursor"                  foreground="cursor"/>
+  <style name="current-line"            background="cur-line"/>
+  <style name="line-numbers"            foreground="line-num-fg" background="line-num-bg"/>
+  <style name="current-line-number"     foreground="fg" background="cur-line" bold="true"/>
+  <style name="bracket-match"           foreground="fg" background="#3A3D41" bold="true"/>
+  <style name="bracket-mismatch"        foreground="fg" background="red" bold="true"/>
+  <style name="right-margin"            foreground="gray" background="bg"/>
+  <style name="draw-spaces"             foreground="gray"/>
+
+  <!-- Language-agnostic mappings (used by c.lang, lunar.lang, etc.) -->
+  <style name="def:comment"             foreground="green" italic="true"/>
+  <style name="def:string"              foreground="orange"/>
+  <style name="def:special-char"        foreground="yellow-gold"/>
+  <style name="def:number"              foreground="number-green"/>
+  <style name="def:decimal"             foreground="number-green"/>
+  <style name="def:keyword"             foreground="blue" bold="false"/>
+  <style name="def:builtin"             foreground="light-yellow"/>
+  <style name="def:function"            foreground="light-yellow"/>
+  <style name="def:type"                foreground="cyan"/>
+  <style name="def:boolean"             foreground="blue"/>
+  <style name="def:special-constant"    foreground="blue"/>
+  <style name="def:operator"            foreground="fg"/>
+  <style name="def:preprocessor"        foreground="purple"/>
+  <style name="def:identifier"          foreground="light-blue"/>
+  <style name="def:statement"           foreground="purple" bold="false"/>
+  <style name="def:constant"            foreground="blue"/>
+  <style name="def:error"               foreground="red" underline="true"/>
+  <style name="def:warning"             foreground="yellow-gold" underline="true"/>
+  <style name="def:note"                foreground="cyan" italic="true"/>
+</style-scheme>

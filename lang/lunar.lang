@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language id="lunar" _name="Lunar" version="2.0" _section="Source">
+  <metadata>
+    <property name="mimetypes">text/x-lunar</property>
+    <property name="globs">*.lunar;*.lun</property>
+    <property name="line-comment-start">//</property>
+  </metadata>
+
+  <styles>
+    <style id="keyword"        _name="Keyword"          map-to="def:keyword"/>
+    <style id="control-flow"   _name="Control Flow"     map-to="def:keyword"/>
+    <style id="struct-kw"      _name="Struct Keyword"   map-to="def:keyword"/>
+    <style id="self-super"     _name="Self/Super"       map-to="def:special-constant"/>
+    <style id="boolean"        _name="Boolean"          map-to="def:boolean"/>
+    <style id="nil"            _name="Nil"              map-to="def:special-constant"/>
+    <style id="string"         _name="String"           map-to="def:string"/>
+    <style id="escape"         _name="Escape"           map-to="def:special-char"/>
+    <style id="comment"        _name="Comment"          map-to="def:comment"/>
+    <style id="number"         _name="Number"           map-to="def:decimal"/>
+    <style id="builtin-func"   _name="Built-in Function" map-to="def:builtin"/>
+    <style id="ffi-func"       _name="FFI Function"     map-to="def:builtin"/>
+    <style id="sdl-func"       _name="SDL Function"     map-to="def:builtin"/>
+    <style id="operator"       _name="Operator"         map-to="def:operator"/>
+    <style id="struct-name"    _name="Struct Name"      map-to="def:type"/>
+    <style id="function-name"  _name="Function Name"    map-to="def:function"/>
+  </styles>
+
+  <definitions>
+
+    <!-- Comments: Lunar only has line comments -->
+    <context id="line-comment" style-ref="comment" end-at-line-end="true">
+      <start>//</start>
+      <include>
+        <context ref="def:in-line-comment"/>
+      </include>
+    </context>
+
+    <!-- Strings: multi-line supported, backslash escapes -->
+    <context id="escape" style-ref="escape">
+      <match>\\.</match>
+    </context>
+
+    <context id="string" style-ref="string">
+      <start>"</start>
+      <end>"</end>
+      <include>
+        <context ref="escape"/>
+      </include>
+    </context>
+
+    <!-- Numbers: 64-bit doubles, ints and decimals -->
+    <context id="number" style-ref="number">
+      <match extended="true">
+        \b [0-9]+ (\.[0-9]+)? \b
+      </match>
+    </context>
+
+    <!-- self / super -->
+    <context id="self-super" style-ref="self-super">
+      <keyword>self</keyword>
+      <keyword>super</keyword>
+    </context>
+
+    <!-- true / false -->
+    <context id="boolean" style-ref="boolean">
+      <keyword>true</keyword>
+      <keyword>false</keyword>
+    </context>
+
+    <!-- nil -->
+    <context id="nil" style-ref="nil">
+      <keyword>nil</keyword>
+    </context>
+
+    <!-- struct declaration keyword -->
+    <context id="struct-kw" style-ref="struct-kw">
+      <keyword>struct</keyword>
+    </context>
+
+    <!-- control flow -->
+    <context id="control-flow" style-ref="control-flow">
+      <keyword>if</keyword>
+      <keyword>else</keyword>
+      <keyword>while</keyword>
+      <keyword>for</keyword>
+      <keyword>ret</keyword>
+    </context>
+
+    <!-- general keywords -->
+    <context id="keywords" style-ref="keyword">
+      <keyword>let</keyword>
+      <keyword>fn</keyword>
+      <keyword>print</keyword>
+      <keyword>init</keyword>
+    </context>
+
+    <!-- built-in stdlib functions -->
+    <context id="builtin-functions" style-ref="builtin-func">
+      <keyword>clock</keyword>
+      <keyword>sqrt</keyword>
+      <keyword>abs</keyword>
+      <keyword>floor</keyword>
+      <keyword>ceil</keyword>
+      <keyword>str</keyword>
+      <keyword>len</keyword>
+      <keyword>random</keyword>
+    </context>
+
+    <!-- FFI functions -->
+    <context id="ffi-functions" style-ref="ffi-func">
+      <keyword>clib</keyword>
+      <keyword>cbind</keyword>
+    </context>
+
+    <!-- SDL2 functions -->
+    <context id="sdl-functions" style-ref="sdl-func">
+      <keyword>sdl_init</keyword>
+      <keyword>sdl_quit</keyword>
+      <keyword>sdl_poll</keyword>
+      <keyword>sdl_clear</keyword>
+      <keyword>sdl_fill_rect</keyword>
+      <keyword>sdl_present</keyword>
+      <keyword>sdl_key_down</keyword>
+      <keyword>sdl_delay</keyword>
+      <keyword>sdl_load_texture</keyword>
+      <keyword>sdl_draw_texture</keyword>
+      <keyword>sdl_texture_width</keyword>
+      <keyword>sdl_texture_height</keyword>
+    </context>
+
+    <!-- Operators: arithmetic, bitwise, comparison, logic -->
+    <context id="operator" style-ref="operator">
+      <match extended="true">
+        \*\*  |          # power
+        &lt;&lt; | &gt;&gt; |   # shifts
+        &amp;&amp; | \|\| |    # logic and/or
+        == | != | &lt;= | &gt;= |
+        [+\-*/%&amp;|\^~!&lt;&gt;=]
+      </match>
+    </context>
+
+    <!-- Struct name after 'struct' keyword and after '<' for inheritance -->
+    <context id="struct-name" style-ref="struct-name">
+      <match extended="true">
+        (?&lt;=\bstruct\s) [A-Za-z_][A-Za-z0-9_]* |
+        (?&lt;=&lt;\s) [A-Za-z_][A-Za-z0-9_]*
+      </match>
+    </context>
+
+    <!-- Function name after 'fn' keyword -->
+    <context id="function-name" style-ref="function-name">
+      <match extended="true">
+        (?&lt;=\bfn\s) [A-Za-z_][A-Za-z0-9_]*
+      </match>
+    </context>
+
+    <context id="lunar">
+      <include>
+        <context ref="line-comment"/>
+        <context ref="string"/>
+        <context ref="number"/>
+        <context ref="self-super"/>
+        <context ref="boolean"/>
+        <context ref="nil"/>
+        <context ref="struct-kw"/>
+        <context ref="struct-name"/>
+        <context ref="function-name"/>
+        <context ref="control-flow"/>
+        <context ref="keywords"/>
+        <context ref="builtin-functions"/>
+        <context ref="ffi-functions"/>
+        <context ref="sdl-functions"/>
+        <context ref="operator"/>
+      </include>
+    </context>
+
+  </definitions>
+</language>
