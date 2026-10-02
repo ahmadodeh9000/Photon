@@ -3,11 +3,20 @@
  * @date: 27th Sep, 2026
  *
 **/
+/*
+I LOVE PHOTON LOL
+MADE WITH LOVE
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
 
 
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
 #include <string.h>
+#include <vte/vte.h>
+
 
 
 // ---------------------------------------------------------------------
@@ -24,6 +33,10 @@ static void update_title(const gchar *filename);
 static gchar *current_filename = NULL;
 static GtkWidget *window = NULL;
 static GtkWidget *sidebar = NULL;                // left pane, toggled from the View menu
+static GtkWidget *terminal_pane = NULL;          // bottom pane, toggled from the View menu
+static GtkWidget *terminal_widget = NULL;        // the VteTerminal inside terminal_pane
+static gchar *terminal_cwd = NULL;               // working dir used when (re)spawning the shell
+static gboolean terminal_dead = FALSE;           // TRUE after the shell exits (e.g. Ctrl+D)
 static GtkSourceBuffer *g_source_buffer = NULL;  // lets tree callbacks load into the editor
 static guint autosave_timer_id = 0;
 
@@ -249,6 +262,65 @@ build_sidebar(const gchar *root_path) {
 
 
 // ---------------------------------------------------------------------
+// Terminal
+// ---------------------------------------------------------------------
+static void
+spawn_shell(void) {
+    gchar *shell = vte_get_user_shell();
+    if (shell == NULL) shell = g_strdup("/bin/bash");
+
+    gchar *argv_shell[] = { shell, NULL };
+
+    vte_terminal_spawn_async(VTE_TERMINAL(terminal_widget),
+        VTE_PTY_DEFAULT,
+        terminal_cwd,
+        argv_shell,
+        NULL,           // envp
+        G_SPAWN_DEFAULT,
+        NULL, NULL,     // child setup
+        NULL,           // child setup data destroy
+        -1,             // timeout
+        NULL,           // cancellable
+        NULL, NULL);    // callback
+
+    g_free(shell);
+    terminal_dead = FALSE;
+}
+
+// Shell exited (Ctrl+D, `exit`, crash): hide the pane and remember it's dead.
+// The next toggle spawns a fresh shell. Respawning here would loop forever
+// if the shell dies instantly.
+static void
+on_terminal_child_exited(VteTerminal *term, gint status, gpointer user_data) {
+    terminal_dead = TRUE;
+    if (terminal_pane != NULL) gtk_widget_hide(terminal_pane);
+}
+
+static GtkWidget *
+build_terminal(const gchar *working_dir) {
+    terminal_widget = vte_terminal_new();
+    terminal_cwd = g_strdup(working_dir);
+
+    // Dark colors matching the editor theme
+    GdkRGBA fg, bg;
+    gdk_rgba_parse(&fg, "#cccccc");
+    gdk_rgba_parse(&bg, "#1e1e1e");
+    vte_terminal_set_colors(VTE_TERMINAL(terminal_widget), &fg, &bg, NULL, 0);
+
+    g_signal_connect(terminal_widget, "child-exited",
+                     G_CALLBACK(on_terminal_child_exited), NULL);
+
+    spawn_shell();
+
+    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_container_add(GTK_CONTAINER(scroll), terminal_widget);
+    gtk_widget_set_size_request(scroll, -1, 200); // default height
+
+    return scroll;
+}
+
+
+// ---------------------------------------------------------------------
 // File load / save
 // ---------------------------------------------------------------------
 static void
@@ -289,7 +361,7 @@ load_file(GtkSourceBuffer *buffer, const gchar *filename) {
         return;
     }
 
-    // Refuse to load binary/non-UTF-8 content — prevents the
+    // Refuse to load binary/non-UTF-8 content prevents the
     // gtk_text_buffer_emit_insert assertion crash on ELF binaries, images, etc.
     if (!g_utf8_validate(contents, length, NULL)) {
         g_printerr("Refusing to open '%s': not a valid UTF-8 text file (likely binary).\n", filename);
@@ -326,7 +398,7 @@ save_file(GtkSourceBuffer *buffer, const gchar *filename) {
         g_printerr("Failed to save file: %s\n", error->message);
         g_error_free(error);
     } else {
-        // Duplicate BEFORE freeing — filename may be the same pointer as
+        // Duplicate BEFORE freeing filename may be the same pointer as
         // current_filename (e.g. when saving an already-open file), so
         // freeing first and then reading filename would read freed memory.
         gchar *new_filename = g_strdup(filename);
@@ -339,7 +411,6 @@ save_file(GtkSourceBuffer *buffer, const gchar *filename) {
 
     g_free(text);
 }
-
 
 // ---------------------------------------------------------------------
 // Menu callbacks
@@ -418,7 +489,7 @@ on_autosave_toggled(GtkCheckMenuItem *item, gpointer user_data) {
 
     if (gtk_check_menu_item_get_active(item)) {
         if (autosave_timer_id == 0) {
-            autosave_timer_id = g_timeout_add_seconds(1, autosave_tick, buffer);
+            autosave_timer_id = g_timeout_add_seconds(30, autosave_tick, buffer);
         }
     } else {
         if (autosave_timer_id != 0) {
@@ -470,6 +541,25 @@ static void
 on_toggle_sidebar_clicked(GtkWidget *widget, gpointer user_data) {
     if (sidebar == NULL) return;
     gtk_widget_set_visible(sidebar, !gtk_widget_get_visible(sidebar));
+}
+
+static void
+on_toggle_terminal_clicked(GtkWidget *widget, gpointer user_data) {
+    if (terminal_pane == NULL) return;
+
+    if (gtk_widget_get_visible(terminal_pane)) {
+        gtk_widget_hide(terminal_pane);
+        return;
+    }
+
+    // Shell died while hidden/visible (Ctrl+D): start a fresh one
+    if (terminal_dead) {
+        vte_terminal_reset(VTE_TERMINAL(terminal_widget), TRUE, TRUE);
+        spawn_shell();
+    }
+
+    gtk_widget_show(terminal_pane);
+    gtk_widget_grab_focus(terminal_widget);
 }
 
 
@@ -539,7 +629,7 @@ int main(int argc, char *argv[]) {
             sidebar_root = arg_path; // ownership transferred, freed later
             show_sidebar = TRUE;
         } else {
-            // Existing file OR a not-yet-created file — either way, root the
+            // Existing file OR a not-yet-created file either way, root the
             // sidebar at its parent directory and try to load it as a file
             file_to_open = arg_path; // ownership transferred, freed later
             sidebar_root = g_path_get_dirname(arg_path);
@@ -555,24 +645,14 @@ int main(int argc, char *argv[]) {
     gtk_window_set_default_size(GTK_WINDOW(window), 1000, 650);
     g_signal_connect(window, "delete-event", G_CALLBACK(gtk_main_quit), NULL);
 
-
-    // Icon, looked up by name in the icon theme (see README) — no hardcoded paths
+    // Icon, looked up by name in the icon theme (see README) no hardcoded paths
     gtk_window_set_icon_name(GTK_WINDOW(window), "photon");
-
-
-    // Icon
-    GError *icon_error = NULL;
-    if (!gtk_window_set_icon_from_file(GTK_WINDOW(window), "/Users/ahmadodeh/Coding/Photon/icons/photon.png", &icon_error)) {
-        g_printerr("Failed to load icon: %s\n", icon_error->message);
-        g_error_free(icon_error);
-    }
-
 
     // Editor pane
     scrolled_window = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
 
-    // No language set at startup — it's picked per-file via apply_language()
+    // No language set at startup it's picked per-file via apply_language()
     source_buffer = gtk_source_buffer_new(NULL);
     g_source_buffer = source_buffer; // expose to sidebar callbacks
 
@@ -603,7 +683,7 @@ int main(int argc, char *argv[]) {
     add_item(file_menu, "Save As...", "<Primary><Shift>s",  accel, G_CALLBACK(on_save_as_clicked), source_buffer);
     add_separator(file_menu);
 
-    GtkWidget *autosave_item = gtk_check_menu_item_new_with_label("Auto Save (every 1s)");
+    GtkWidget *autosave_item = gtk_check_menu_item_new_with_label("Auto Save (every 30s)");
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(autosave_item), FALSE); // off by default
     g_signal_connect(autosave_item, "toggled", G_CALLBACK(on_autosave_toggled), source_buffer);
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), autosave_item);
@@ -620,21 +700,36 @@ int main(int argc, char *argv[]) {
     add_separator(edit_menu);
     add_item(edit_menu, "Select All", "<Primary>a",         accel, G_CALLBACK(on_select_all_clicked), source_view);
 
-    add_item(view_menu, "Toggle Sidebar", "<Primary>b",     accel, G_CALLBACK(on_toggle_sidebar_clicked), NULL);
+    add_item(view_menu, "Toggle Sidebar",  "<Primary>b",     accel, G_CALLBACK(on_toggle_sidebar_clicked),  NULL);
+    add_item(view_menu, "Toggle Terminal", "<Primary>t", accel, G_CALLBACK(on_toggle_terminal_clicked), NULL);
 
     g_object_unref(accel); // the window holds its own reference
 
-    // vbox holds the menu bar + editor, and becomes the RIGHT pane of the split
+    // vbox holds the menu bar + editor/terminal split, and becomes the RIGHT pane of the split
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_box_pack_start(GTK_BOX(vbox), menu_bar, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(vbox), scrolled_window, TRUE, TRUE, 0);
 
-    // Sidebar (left pane) — built ONCE, rooted at sidebar_root
+    // Keep a copy of sidebar_root before it's freed below the terminal needs
+    // a working directory too, and build_sidebar() takes ownership-by-freeing.
+    gchar *sidebar_root_backup = g_strdup(sidebar_root);
+
+    GtkWidget *vpaned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+    gtk_paned_pack1(GTK_PANED(vpaned), scrolled_window, TRUE, FALSE);
+
+    terminal_pane = build_terminal(sidebar_root_backup);
+    g_free(sidebar_root_backup);
+
+    gtk_paned_pack2(GTK_PANED(vpaned), terminal_pane, FALSE, FALSE);
+    gtk_paned_set_position(GTK_PANED(vpaned), 450);
+
+    gtk_box_pack_start(GTK_BOX(vbox), vpaned, TRUE, TRUE, 0);
+
+    // Sidebar (left pane) built ONCE, rooted at sidebar_root
     // (which is either the given directory, the parent of a given file, or cwd)
     sidebar = build_sidebar(sidebar_root);
     g_free(sidebar_root);
 
-    // Split: sidebar on the left, editor (vbox) on the right
+    // Split: sidebar on the left, editor+terminal (vbox) on the right
     GtkWidget *hpaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_paned_pack1(GTK_PANED(hpaned), sidebar, FALSE, FALSE);
     gtk_paned_pack2(GTK_PANED(hpaned), vbox, TRUE, FALSE);
@@ -642,7 +737,7 @@ int main(int argc, char *argv[]) {
 
     gtk_container_add(GTK_CONTAINER(window), hpaned);
 
-    // Load the requested file (if any) — this sets the title itself.
+    // Load the requested file (if any) this sets the title itself.
     // Only fall back to the default "Photon" title if nothing was requested.
     if (file_to_open != NULL) {
         if (g_file_test(file_to_open, G_FILE_TEST_EXISTS)) {
@@ -659,11 +754,12 @@ int main(int argc, char *argv[]) {
         update_title(NULL);
     }
 
-    // Show all widgets, then hide the sidebar unless a directory was opened
+    // Show all widgets, then hide the sidebar/terminal unless requested
     gtk_widget_show_all(window);
     if (!show_sidebar) {
         gtk_widget_hide(sidebar);
     }
+    gtk_widget_hide(terminal_pane); // terminal starts hidden, toggled via Cmd+` / Ctrl+`
 
     // Start the GTK main loop
     gtk_main();
