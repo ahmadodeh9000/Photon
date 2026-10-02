@@ -555,8 +555,18 @@ int main(int argc, char *argv[]) {
     gtk_window_set_default_size(GTK_WINDOW(window), 1000, 650);
     g_signal_connect(window, "delete-event", G_CALLBACK(gtk_main_quit), NULL);
 
+
     // Icon, looked up by name in the icon theme (see README) — no hardcoded paths
     gtk_window_set_icon_name(GTK_WINDOW(window), "photon");
+
+
+    // Icon
+    GError *icon_error = NULL;
+    if (!gtk_window_set_icon_from_file(GTK_WINDOW(window), "/Users/ahmadodeh/Coding/Photon/icons/photon.png", &icon_error)) {
+        g_printerr("Failed to load icon: %s\n", icon_error->message);
+        g_error_free(icon_error);
+    }
+
 
     // Editor pane
     scrolled_window = gtk_scrolled_window_new(NULL, NULL);
@@ -593,7 +603,7 @@ int main(int argc, char *argv[]) {
     add_item(file_menu, "Save As...", "<Primary><Shift>s",  accel, G_CALLBACK(on_save_as_clicked), source_buffer);
     add_separator(file_menu);
 
-    GtkWidget *autosave_item = gtk_check_menu_item_new_with_label("Auto Save (every 30s)");
+    GtkWidget *autosave_item = gtk_check_menu_item_new_with_label("Auto Save (every 1s)");
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(autosave_item), FALSE); // off by default
     g_signal_connect(autosave_item, "toggled", G_CALLBACK(on_autosave_toggled), source_buffer);
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), autosave_item);
