@@ -3,6 +3,7 @@
 #   make              build ./Photon (objects go to build/)
 #   make deps         print the install command for this OS / distro
 #   make check        headless smoke test (Linux CI: xvfb-run make check)
+#   make test         unit tests: error parsers, editing (needs a display too)
 #   make install      install to $(PREFIX) (default /usr/local); DESTDIR works
 #   make uninstall
 #   make WERROR=1     treat warnings as errors (CI does this)
@@ -54,8 +55,10 @@ LDLIBS   += $(PKG_LIBS)
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(patsubst src/%.c,$(BUILDDIR)/%.o,$(SRCS))
+LIB_OBJS := $(filter-out $(BUILDDIR)/main.o,$(OBJS))   # everything but main(), for tests
+TESTS := $(BUILDDIR)/test_errors $(BUILDDIR)/test_editing
 
-.PHONY: all deps check install uninstall clean
+.PHONY: all deps check test install uninstall clean
 
 all: $(TARGET)
 
@@ -64,6 +67,9 @@ $(TARGET): $(OBJS)
 
 $(BUILDDIR)/%.o: src/%.c | $(BUILDDIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(BUILDDIR)/test_%: tests/test_%.c tests/check.h $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(LDLIBS)
 
 $(BUILDDIR):
 	mkdir -p $@
@@ -92,6 +98,9 @@ endif
 check: $(TARGET)
 	./$(TARGET) --version
 	./$(TARGET) --smoke-test tests/samples/hello.lunar
+
+test: $(TESTS)
+	@for t in $(TESTS); do ./$$t || exit 1; done
 
 # ---------------------------------------------------------------------
 # install / uninstall

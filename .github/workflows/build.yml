@@ -33,12 +33,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           xvfb-run -a make check
+          xvfb-run -a make test
+          xvfb-run -a ./Photon --run --screenshot photon-run-${{ matrix.os }}.png tests/samples/hello.py
           xvfb-run -a ./Photon --screenshot photon-${{ matrix.os }}.png tests/samples/hello.lunar
 
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
         run: |
           make check
+          make test
+          ./Photon --run --screenshot photon-run-${{ matrix.os }}.png tests/samples/hello.py
           ./Photon --screenshot photon-${{ matrix.os }}.png tests/samples/hello.lunar
 
       - name: Upload screenshot

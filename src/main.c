@@ -16,6 +16,7 @@ MADE WITH LOVE
  *   photon some/folder     open a folder with the sidebar shown
  *   photon --version
  *   photon --smoke-test    start, check that resources load, quit (for CI)
+ *   photon --run FILE      open FILE and run it right away
  *   photon --screenshot out.png [FILE]   smoke test + save the window as a PNG
  */
 #include <gtk/gtk.h>
@@ -32,13 +33,14 @@ MADE WITH LOVE
 typedef struct {
     gboolean version;
     gboolean smoke_test;
+    gboolean run;         // --run: run the file once the window is up
     gchar   *screenshot;  // --screenshot FILE (implies --smoke-test)
     gchar   *path;        // first non-option argument, canonicalized
 } Args;
 
 static void
 print_usage(void) {
-    g_print("Usage: photon [--version] [--smoke-test] [--screenshot OUT.png] [FILE | FOLDER]\n");
+    g_print("Usage: photon [--version] [--run] [--smoke-test] [--screenshot OUT.png] [FILE | FOLDER]\n");
 }
 
 // Returns FALSE on an unknown option
@@ -49,6 +51,8 @@ parse_args(int argc, char *argv[], Args *args) {
             args->version = TRUE;
         } else if (g_strcmp0(argv[i], "--smoke-test") == 0) {
             args->smoke_test = TRUE;
+        } else if (g_strcmp0(argv[i], "--run") == 0) {
+            args->run = TRUE;
         } else if (g_strcmp0(argv[i], "--screenshot") == 0 && i + 1 < argc) {
             args->smoke_test = TRUE;
             args->screenshot = g_strdup(argv[++i]);
@@ -110,6 +114,13 @@ save_screenshot(GtkWidget *window, const gchar *png_path) {
     cairo_surface_destroy(surface);
 }
 
+static gboolean
+run_soon(gpointer user_data) {
+    PhotonApp *app = user_data;
+    photon_runner_run(app->runner);
+    return G_SOURCE_REMOVE;
+}
+
 typedef struct {
     PhotonApp   *app;
     const gchar *screenshot;
@@ -152,9 +163,11 @@ main(int argc, char *argv[]) {
 
     int status = 0;
     SmokeTest test = { app, args.screenshot };
+    if (args.run && options.file != NULL) g_idle_add(run_soon, app);
     if (args.smoke_test) {
         status = resources_ok() ? 0 : 1;
-        g_timeout_add(1500, finish_smoke_test, &test);
+        // A run (e.g. compiling C) gets a little longer to finish first
+        g_timeout_add(args.run ? 3000 : 1500, finish_smoke_test, &test);
     }
     gtk_main();
 

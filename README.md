@@ -15,7 +15,11 @@ photon ~/some/project  # open a directory
 
 ## Features
 
-- Syntax highlighting for C and Lunar, switched automatically by file extension
+- Syntax highlighting for Lunar, C and Python, switched automatically by file extension
+- Run the current file (Cmd/Ctrl+R or F5) in an interactive Run tab, stop it
+  with Cmd/Ctrl+. ; errors from Lunar, gcc/clang and Python are underlined,
+  marked in the gutter and jumped to
+- Comment toggle (Cmd/Ctrl+/) and auto-closing brackets and quotes
 - File tree sidebar rooted at the working directory
 - Open / Save through native GTK file dialogs
 - A VS Code Dark+ style scheme

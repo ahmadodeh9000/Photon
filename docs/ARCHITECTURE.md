@@ -6,31 +6,60 @@ window's state lives in a `PhotonApp` (see `app.h`), and every callback gets
 it as `user_data`.
 
 ```
-src/main.c        startup: arguments, --version / --smoke-test / --screenshot,
-                  finds the data folder, then calls photon_app_new()
-src/app.c/.h      main window: layout, menus + shortcuts, title, file dialogs
-src/document.c/.h one open file: GtkSourceBuffer + view + path + dirty state
-src/sidebar.c/.h  file tree on the left (lazy: folders are read on expand)
-src/panel.c/.h    bottom panel: the VTE terminal running the user's shell
-src/languages.c/.h file -> GtkSourceView language; adds lang/ to the search path
-src/theme.c/.h    GTK CSS for the chrome + the code style scheme
-src/platform.c/.h ALL OS-specific code (#ifdef __APPLE__ / __linux__)
+src/main.c         startup: arguments (--version, --run, --smoke-test,
+                   --screenshot), finds the data folder, calls photon_app_new()
+src/app.c/.h       main window: layout, menus + shortcuts, title, file dialogs,
+                   save, showing run errors
+src/document.c/.h  one open file: buffer + view + path + language + dirty
+                   state + error markers (underline, gutter dot, tooltip)
+src/editing.c/.h   typing behaviors from the language: auto-close pairs,
+                   comment toggle
+src/sidebar.c/.h   file tree on the left (lazy: folders are read on expand)
+src/panel.c/.h     bottom notebook; owns the "Terminal" tab (user's shell)
+src/runner.c/.h    Run / Stop: builds the command, runs it in the "Run" tab,
+                   tees stderr, exit code + time, finds lunar/python3/cc
+src/errors.c/.h    stderr parsers (Lunar, gcc/clang, Python) -> PhotonError list
+src/languages.c/.h the language registry (one entry per language)
+src/statusbar.c/.h message (errors in red) + run status at the bottom
+src/settings.c/.h  settings.ini (GKeyFile) in g_get_user_config_dir()/photon
+src/theme.c/.h     GTK CSS for the chrome + the code style scheme
+src/platform.c/.h  ALL OS-specific code (#ifdef __APPLE__ / __linux__)
 
 lang/             GtkSourceView language specs (lunar.lang)
 styles/           GtkSourceView style schemes (vscode-dark.xml)
 icons/            app icon (1024 px + a 256 px copy for Linux icon themes)
 data/             photon.desktop (Linux only)
 tests/samples/    small Lunar / C / Python files for manual and CI checks
+tests/test_*.c    unit tests (`make test`): parsers, editing, markers, registry
 ```
 
 How it fits together:
 
 ```
-main ──> platform_data_dir() ──> languages_init() + theme_init()
+main ──> platform_init() + platform_data_dir() ──> languages_init() + theme_init()
      └─> app_new()
-           ├─ document_new()   editor (center)
-           ├─ panel_new()      terminal (bottom, hidden at start)
+           ├─ settings_load()
+           ├─ statusbar_new()  bottom strip
+           ├─ document_new()   editor (center), attaches editing.c
+           ├─ panel_new()      bottom notebook: Terminal tab (hidden at start)
+           ├─ runner_new()     adds the Run tab to the panel
            └─ sidebar_new()    file tree (left), calls back app_open_file()
+```
+
+A run, start to finish:
+
+```
+Run (Cmd/Ctrl+R, F5) -> runner_run()
+  app_save()                         asks for a name if untitled
+  language = document_get_language() registry entry for the file
+  command  = run_cmd with {file} {exe} {lunar} ... expanded and quoted
+             ({lunar}: $LUNAR, settings.ini [tools] lunar=, PATH, then ask)
+  /bin/sh RUN_WRAPPER err-file command   in the Run tab's VteTerminal
+        stdin/stdout on the terminal, stderr tee'd to err-file
+child-exited -> "[Exit N · 0.42 s]", status bar
+  errors = language->error_parser(err-file text)
+  app_show_errors(): open the file of the first error, mark lines, jump
+Any edit in the document clears its markers.
 ```
 
 Each module follows the same shape: an opaque struct (`PhotonSidebar`, ...),
@@ -96,14 +125,34 @@ Pass `NULL` as the shortcut for a menu item without one.
 
 ## How to add a language
 
-Today a language is picked by GtkSourceView from the file extension (the
-`globs` in its `.lang` file), so:
+Add ONE entry to `LANGUAGES` in `src/languages.c`:
 
-- **Built-in to GtkSourceView** (C, Python, ...): nothing to do.
-- **Your own**: drop `lang/<id>.lang` in the repo (copy `lunar.lang` as a
-  starting point; style ids are `<id>:<name>` and should `map-to` a `def:*`
-  style so every scheme colors them), and optionally add `<id>:*` colors to
-  the schemes in `styles/`. `make install` copies every `lang/*.lang`.
+```c
+static const PhotonLanguage LANG_RUBY = {
+    .id = "ruby", .name = "Ruby",
+    .exts = { ".rb", NULL },
+    .gsv_lang = "ruby",               // GtkSourceView language id
+    .run_cmd = "{ruby} {file}",       // NULL if it can't be run
+    .comment = "#", .indent = 2,
+    .pairs = "()[]{}\"\"''",           // auto-close pairs, 2 chars each
+    .error_parser = NULL,             // or a parser from errors.c
+};
+...
+static const PhotonLanguage *const LANGUAGES[] = { &LANG_LUNAR, &LANG_C, &LANG_PYTHON, &LANG_RUBY, NULL };
+```
 
-(Phase 2 replaces this with a one-entry registry in `languages.c` that also
-holds the run command, comment marker, indent and error parser.)
+Then, only if needed:
+
+- **A new `{tool}` in run_cmd**: add a line to `TOOLS` in `runner.c`
+  (`{ "ruby", "RUBY", { "ruby", NULL }, FALSE }` = env var, PATH names,
+  whether to ask with a file chooser when it isn't found).
+- **Error markers**: write `photon_errors_parse_ruby()` in `errors.c`
+  (text in, `PhotonError` list out; see the Python one) and add a test
+  case with real output to `tests/test_errors.c`.
+- **No GtkSourceView highlighting for it**: drop `lang/<id>.lang` in the
+  repo (copy `lunar.lang`; style ids are `<id>:<name>` and should `map-to`
+  a `def:*` style so every scheme colors them).
+
+Run placeholders: `{file}` `{dir}` `{name}` (file name without extension)
+`{exe}` (`<tmp>/photon-<name>`) and any tool in `TOOLS`. Every value is
+shell-quoted; the command runs in the file's folder.

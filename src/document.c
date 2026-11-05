@@ -4,19 +4,93 @@
  *
 **/
 /*
- * document: one open file (buffer + view + path). See document.h.
+ * document: one open file (buffer + view + path + markers). See document.h.
  */
 #include "document.h"
-#include "languages.h"
+#include "editing.h"
 #include "theme.h"
 
+#define MARK_ERROR    "photon-error"
+#define MARK_WARNING  "photon-warning"
+#define TAG_ERROR     "photon-error"
+#define TAG_WARNING   "photon-warning"
+#define DATA_MESSAGE  "photon-message"
+
 struct PhotonDocument {
-    GtkSourceBuffer *buffer;
-    GtkWidget       *view;
-    GtkWidget       *scroll;   // root widget, holds the view
-    gchar           *path;     // NULL until loaded or saved
+    GtkSourceBuffer      *buffer;
+    GtkWidget            *view;
+    GtkWidget            *scroll;      // root widget, holds the view
+    gchar                *path;        // NULL until loaded or saved
+    const PhotonLanguage *language;    // registry entry, NULL if unknown
+    gboolean              has_errors;  // markers are showing
 };
 
+// ---------------------------------------------------------------------
+// Error marker look: a filled circle in the gutter, tinted line, squiggle
+// ---------------------------------------------------------------------
+static GdkPixbuf *
+make_dot(const gchar *color) {
+    const int size = 12;
+    GdkRGBA rgba;
+    gdk_rgba_parse(&rgba, color);
+
+    cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
+    cairo_t *cr = cairo_create(surface);
+    gdk_cairo_set_source_rgba(cr, &rgba);
+    cairo_arc(cr, size / 2.0, size / 2.0, size / 2.0 - 1, 0, 2 * G_PI);
+    cairo_fill(cr);
+    cairo_destroy(cr);
+
+    GdkPixbuf *pixbuf = gdk_pixbuf_get_from_surface(surface, 0, 0, size, size);
+    cairo_surface_destroy(surface);
+    return pixbuf;
+}
+
+static gchar *
+on_mark_tooltip(GtkSourceMarkAttributes *attrs G_GNUC_UNUSED, GtkSourceMark *mark, gpointer user_data G_GNUC_UNUSED) {
+    return g_strdup(g_object_get_data(G_OBJECT(mark), DATA_MESSAGE));
+}
+
+static void
+add_mark_category(GtkSourceView *view, const gchar *category, const gchar *dot, const gchar *tint) {
+    GtkSourceMarkAttributes *attrs = gtk_source_mark_attributes_new();
+    GdkPixbuf *pixbuf = make_dot(dot);
+    GdkRGBA background;
+    gdk_rgba_parse(&background, tint);
+
+    gtk_source_mark_attributes_set_pixbuf(attrs, pixbuf);
+    gtk_source_mark_attributes_set_background(attrs, &background);
+    g_signal_connect(attrs, "query-tooltip-text", G_CALLBACK(on_mark_tooltip), NULL);
+    gtk_source_view_set_mark_attributes(view, category, attrs, 10);
+
+    g_object_unref(pixbuf);
+    g_object_unref(attrs);
+}
+
+static void
+setup_markers(PhotonDocument *doc) {
+    GdkRGBA red, orange;
+    gdk_rgba_parse(&red, "#F44747");
+    gdk_rgba_parse(&orange, "#D7BA7D");
+    gtk_text_buffer_create_tag(GTK_TEXT_BUFFER(doc->buffer), TAG_ERROR,
+        "underline", PANGO_UNDERLINE_ERROR, "underline-rgba", &red, NULL);
+    gtk_text_buffer_create_tag(GTK_TEXT_BUFFER(doc->buffer), TAG_WARNING,
+        "underline", PANGO_UNDERLINE_ERROR, "underline-rgba", &orange, NULL);
+
+    add_mark_category(GTK_SOURCE_VIEW(doc->view), MARK_ERROR,   "#F44747", "rgba(244,71,71,0.18)");
+    add_mark_category(GTK_SOURCE_VIEW(doc->view), MARK_WARNING, "#D7BA7D", "rgba(215,186,125,0.15)");
+    gtk_source_view_set_show_line_marks(GTK_SOURCE_VIEW(doc->view), TRUE);
+}
+
+static void
+on_buffer_changed(GtkTextBuffer *buffer G_GNUC_UNUSED, gpointer user_data) {
+    PhotonDocument *doc = user_data;
+    if (doc->has_errors) photon_document_clear_errors(doc);
+}
+
+// ---------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------
 PhotonDocument *
 photon_document_new(void) {
     PhotonDocument *doc = g_new0(PhotonDocument, 1);
@@ -34,16 +108,36 @@ photon_document_new(void) {
     gtk_container_add(GTK_CONTAINER(doc->scroll), doc->view);
     g_object_ref_sink(doc->scroll); // we own it until free, whoever packs it
 
+    setup_markers(doc);
+    g_signal_connect(doc->buffer, "changed", G_CALLBACK(on_buffer_changed), doc);
+    photon_editing_attach(doc);
     return doc;
 }
 
 void
 photon_document_free(PhotonDocument *doc) {
     if (doc == NULL) return;
+    g_signal_handlers_disconnect_by_data(doc->buffer, doc);
+    g_signal_handlers_disconnect_by_data(doc->view, doc);
     g_object_unref(doc->scroll);
     g_object_unref(doc->buffer);
     g_free(doc->path);
     g_free(doc);
+}
+
+// Indent settings come from the registry; unknown files keep GTK's defaults
+static void
+apply_language(PhotonDocument *doc) {
+    GtkSourceView *view = GTK_SOURCE_VIEW(doc->view);
+
+    doc->language = photon_languages_for_file(doc->path);
+    gtk_source_buffer_set_language(doc->buffer, photon_languages_highlighting_for_file(doc->path));
+
+    if (doc->language != NULL) {
+        gtk_source_view_set_tab_width(view, doc->language->indent);
+        gtk_source_view_set_indent_width(view, (gint)doc->language->indent);
+        gtk_source_view_set_insert_spaces_instead_of_tabs(view, TRUE);
+    }
 }
 
 void
@@ -52,11 +146,12 @@ photon_document_set_path(PhotonDocument *doc, const gchar *path) {
     gchar *copy = g_strdup(path);
     g_free(doc->path);
     doc->path = copy;
-
-    // "Save As x.lunar" switches highlighting; NULL language = plain text
-    gtk_source_buffer_set_language(doc->buffer, photon_languages_for_file(doc->path));
+    apply_language(doc);  // "Save As x.lunar" switches highlighting
 }
 
+// ---------------------------------------------------------------------
+// Load / save
+// ---------------------------------------------------------------------
 gboolean
 photon_document_load(PhotonDocument *doc, const gchar *path, GError **error) {
     gchar *contents;
@@ -78,6 +173,10 @@ photon_document_load(PhotonDocument *doc, const gchar *path, GError **error) {
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents, (gint)length);
     gtk_source_buffer_end_not_undoable_action(doc->buffer);
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
+
+    GtkTextIter start;
+    gtk_text_buffer_get_start_iter(GTK_TEXT_BUFFER(doc->buffer), &start);
+    gtk_text_buffer_place_cursor(GTK_TEXT_BUFFER(doc->buffer), &start);
 
     g_free(contents);
     return TRUE;
@@ -107,9 +206,90 @@ photon_document_save(PhotonDocument *doc, GError **error) {
     return photon_document_save_as(doc, doc->path, error);
 }
 
+// ---------------------------------------------------------------------
+// Error markers + navigation
+// ---------------------------------------------------------------------
+void
+photon_document_clear_errors(PhotonDocument *doc) {
+    GtkTextBuffer *buffer = GTK_TEXT_BUFFER(doc->buffer);
+    GtkTextIter start, end;
+    gtk_text_buffer_get_bounds(buffer, &start, &end);
+
+    gtk_text_buffer_remove_tag_by_name(buffer, TAG_ERROR, &start, &end);
+    gtk_text_buffer_remove_tag_by_name(buffer, TAG_WARNING, &start, &end);
+    gtk_source_buffer_remove_source_marks(doc->buffer, &start, &end, MARK_ERROR);
+    gtk_source_buffer_remove_source_marks(doc->buffer, &start, &end, MARK_WARNING);
+    doc->has_errors = FALSE;
+}
+
+// Iter at the start of a 1-based line, clamped to the buffer
+static void
+line_start(GtkTextBuffer *buffer, gint line, GtkTextIter *iter) {
+    gint last = gtk_text_buffer_get_line_count(buffer);
+    gtk_text_buffer_get_iter_at_line(buffer, iter, CLAMP(line, 1, last) - 1);
+}
+
+static void
+mark_line(PhotonDocument *doc, const PhotonError *error) {
+    GtkTextBuffer *buffer = GTK_TEXT_BUFFER(doc->buffer);
+    GtkTextIter start, end;
+
+    line_start(buffer, error->line, &start);
+    GtkSourceMark *mark = gtk_source_buffer_create_source_mark(doc->buffer, NULL,
+        error->is_warning ? MARK_WARNING : MARK_ERROR, &start);
+    g_object_set_data_full(G_OBJECT(mark), DATA_MESSAGE, g_strdup(error->message), g_free);
+
+    // Underline the code on that line, skipping the indentation
+    while (!gtk_text_iter_ends_line(&start) && g_unichar_isspace(gtk_text_iter_get_char(&start))) {
+        gtk_text_iter_forward_char(&start);
+    }
+    end = start;
+    if (!gtk_text_iter_ends_line(&end)) gtk_text_iter_forward_to_line_end(&end);
+    gtk_text_buffer_apply_tag_by_name(buffer, error->is_warning ? TAG_WARNING : TAG_ERROR, &start, &end);
+}
+
+void
+photon_document_show_errors(PhotonDocument *doc, GPtrArray *errors) {
+    photon_document_clear_errors(doc);
+    if (doc->path == NULL || errors == NULL) return;
+
+    gchar *mine = g_canonicalize_filename(doc->path, NULL);
+    for (guint i = 0; i < errors->len; i++) {
+        const PhotonError *error = g_ptr_array_index(errors, i);
+        if (g_strcmp0(error->path, mine) == 0) {
+            mark_line(doc, error);
+            doc->has_errors = TRUE;
+        }
+    }
+    g_free(mine);
+}
+
+void
+photon_document_goto(PhotonDocument *doc, gint line, gint column) {
+    GtkTextBuffer *buffer = GTK_TEXT_BUFFER(doc->buffer);
+    GtkTextIter iter;
+
+    line_start(buffer, line, &iter);
+    if (column > 1) {
+        gint chars = gtk_text_iter_get_chars_in_line(&iter);
+        gtk_text_iter_set_line_offset(&iter, MIN(column - 1, MAX(chars - 1, 0)));
+    }
+    gtk_text_buffer_place_cursor(buffer, &iter);
+    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(doc->view), &iter, 0.2, FALSE, 0, 0);
+    gtk_widget_grab_focus(doc->view);
+}
+
+// ---------------------------------------------------------------------
+// Getters
+// ---------------------------------------------------------------------
 const gchar *
 photon_document_get_path(PhotonDocument *doc) {
     return doc->path;
+}
+
+const PhotonLanguage *
+photon_document_get_language(PhotonDocument *doc) {
+    return doc->language;
 }
 
 gboolean

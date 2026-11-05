@@ -31,6 +31,13 @@ static const gchar *THEME_CSS =
 
     "paned > separator { background-image: image(#3c3c3c); }"
 
+    "notebook > header { background-color: #252526; border: none; }"
+    "notebook > header tab { color: #969696; padding: 2px 12px; }"
+    "notebook > header tab:checked { color: #ffffff; background-color: #1e1e1e; }"
+
+    ".photon-statusbar { background-color: #007acc; color: #ffffff; padding: 2px 10px; }"
+    ".photon-statusbar label.error { color: #ffffff; font-weight: bold; }"
+
     // Monospace fallback chain: Menlo exists on every Mac, DejaVu Sans Mono /
     // Liberation Mono on nearly every Linux desktop.
     "textview {"

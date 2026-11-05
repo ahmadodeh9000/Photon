@@ -4,7 +4,7 @@
  *
 **/
 /*
- * panel: bottom terminal panel. See panel.h.
+ * panel: bottom notebook with the shell terminal. See panel.h.
  */
 #include "panel.h"
 #include "platform.h"
@@ -12,8 +12,9 @@
 #include <vte/vte.h>
 
 struct PhotonPanel {
-    GtkWidget *root;        // scrolled window
-    GtkWidget *terminal;    // VteTerminal
+    GtkWidget *notebook;    // root widget
+    GtkWidget *term_page;   // scrolled window holding the terminal
+    GtkWidget *terminal;    // VteTerminal running the shell
     gchar     *cwd;         // where (re)spawned shells start
     gboolean   shell_dead;  // TRUE after the shell exits (e.g. Ctrl+D)
 };
@@ -39,20 +40,32 @@ spawn_shell(PhotonPanel *panel) {
     panel->shell_dead = FALSE;
 }
 
-// Shell exited (Ctrl+D, `exit`, crash): hide the pane and remember it's dead.
-// The next toggle spawns a fresh shell; respawning right here would loop
-// forever if the shell dies instantly.
+static gboolean
+terminal_tab_showing(PhotonPanel *panel) {
+    gint current = gtk_notebook_get_current_page(GTK_NOTEBOOK(panel->notebook));
+    return gtk_widget_get_visible(panel->notebook)
+        && current == gtk_notebook_page_num(GTK_NOTEBOOK(panel->notebook), panel->term_page);
+}
+
+// Shell exited (Ctrl+D, `exit`, crash): remember it's dead and hide the panel
+// if it was showing the terminal. The next toggle spawns a fresh shell;
+// respawning right here would loop forever if the shell dies instantly.
 static void
 on_child_exited(VteTerminal *term G_GNUC_UNUSED, gint status G_GNUC_UNUSED, gpointer user_data) {
     PhotonPanel *panel = user_data;
     panel->shell_dead = TRUE;
-    gtk_widget_hide(panel->root);
+    if (terminal_tab_showing(panel)) gtk_widget_hide(panel->notebook);
 }
 
 PhotonPanel *
 photon_panel_new(const gchar *working_dir) {
     PhotonPanel *panel = g_new0(PhotonPanel, 1);
     panel->cwd = g_strdup(working_dir);
+
+    panel->notebook = gtk_notebook_new();
+    gtk_notebook_set_show_border(GTK_NOTEBOOK(panel->notebook), FALSE);
+    gtk_widget_set_size_request(panel->notebook, -1, 200);
+    g_object_ref_sink(panel->notebook);
 
     panel->terminal = vte_terminal_new();
     GdkRGBA fg, bg;
@@ -61,10 +74,9 @@ photon_panel_new(const gchar *working_dir) {
     vte_terminal_set_colors(VTE_TERMINAL(panel->terminal), &fg, &bg, NULL, 0);
     g_signal_connect(panel->terminal, "child-exited", G_CALLBACK(on_child_exited), panel);
 
-    panel->root = gtk_scrolled_window_new(NULL, NULL);
-    gtk_container_add(GTK_CONTAINER(panel->root), panel->terminal);
-    gtk_widget_set_size_request(panel->root, -1, 200);
-    g_object_ref_sink(panel->root);
+    panel->term_page = gtk_scrolled_window_new(NULL, NULL);
+    gtk_container_add(GTK_CONTAINER(panel->term_page), panel->terminal);
+    photon_panel_add_tab(panel, panel->term_page, "Terminal");
 
     spawn_shell(panel);
     return panel;
@@ -75,20 +87,34 @@ photon_panel_free(PhotonPanel *panel) {
     if (panel == NULL) return;
     // The terminal may still emit child-exited while being destroyed
     g_signal_handlers_disconnect_by_data(panel->terminal, panel);
-    g_object_unref(panel->root);
+    g_object_unref(panel->notebook);
     g_free(panel->cwd);
     g_free(panel);
 }
 
 GtkWidget *
 photon_panel_get_widget(PhotonPanel *panel) {
-    return panel->root;
+    return panel->notebook;
 }
 
 void
-photon_panel_toggle(PhotonPanel *panel) {
-    if (gtk_widget_get_visible(panel->root)) {
-        gtk_widget_hide(panel->root);
+photon_panel_add_tab(PhotonPanel *panel, GtkWidget *content, const gchar *title) {
+    gtk_notebook_append_page(GTK_NOTEBOOK(panel->notebook), content, gtk_label_new(title));
+    gtk_widget_show_all(content);
+}
+
+void
+photon_panel_show_tab(PhotonPanel *panel, GtkWidget *content) {
+    gint page = gtk_notebook_page_num(GTK_NOTEBOOK(panel->notebook), content);
+    if (page < 0) return;
+    gtk_widget_show(panel->notebook);
+    gtk_notebook_set_current_page(GTK_NOTEBOOK(panel->notebook), page);
+}
+
+void
+photon_panel_toggle_terminal(PhotonPanel *panel) {
+    if (terminal_tab_showing(panel)) {
+        gtk_widget_hide(panel->notebook);
         return;
     }
 
@@ -96,6 +122,6 @@ photon_panel_toggle(PhotonPanel *panel) {
         vte_terminal_reset(VTE_TERMINAL(panel->terminal), TRUE, TRUE);
         spawn_shell(panel);
     }
-    gtk_widget_show(panel->root);
+    photon_panel_show_tab(panel, panel->term_page);
     gtk_widget_grab_focus(panel->terminal);
 }
