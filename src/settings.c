@@ -13,11 +13,13 @@
 struct PhotonSettings {
     GKeyFile *keys;
     gchar    *path;
+    gboolean  read_only;
 };
 
 PhotonSettings *
-photon_settings_load(void) {
+photon_settings_load(gboolean read_only) {
     PhotonSettings *settings = g_new0(PhotonSettings, 1);
+    settings->read_only = read_only;
     settings->keys = g_key_file_new();
     settings->path = g_build_filename(g_get_user_config_dir(), "photon", "settings.ini", NULL);
 
@@ -41,6 +43,7 @@ photon_settings_free(PhotonSettings *settings) {
 
 static void
 save(PhotonSettings *settings) {
+    if (settings->read_only) return;
     gchar *dir = g_path_get_dirname(settings->path);
     g_mkdir_with_parents(dir, 0700);
     g_free(dir);

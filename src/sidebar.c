@@ -7,6 +7,7 @@
  * sidebar: lazy file tree. See sidebar.h.
  */
 #include "sidebar.h"
+#include "theme.h"
 
 enum {
     COL_NAME,
@@ -164,6 +165,7 @@ photon_sidebar_new(const gchar *root_dir, PhotonSidebarOpenFunc on_open, gpointe
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sidebar->root),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     gtk_container_add(GTK_CONTAINER(sidebar->root), sidebar->view);
+    photon_theme_make_well(sidebar->root);
     gtk_widget_set_size_request(sidebar->root, 220, -1);
     g_object_ref_sink(sidebar->root);
 

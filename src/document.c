@@ -8,6 +8,7 @@
  */
 #include "document.h"
 #include "editing.h"
+#include "theme.h"
 
 #define MARK_ERROR    "photon-error"
 #define MARK_WARNING  "photon-warning"
@@ -125,6 +126,7 @@ photon_document_new(void) {
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(doc->scroll),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     gtk_container_add(GTK_CONTAINER(doc->scroll), doc->view);
+    photon_theme_make_well(doc->scroll);
     g_object_ref_sink(doc->scroll); // we own it until free, whoever packs it
 
     setup_markers(doc);
@@ -261,6 +263,20 @@ photon_document_save(PhotonDocument *doc, GError **error) {
 // ---------------------------------------------------------------------
 // Error markers + navigation
 // ---------------------------------------------------------------------
+static void
+set_tint(GtkSourceView *view, const gchar *category, const gchar *color) {
+    GtkSourceMarkAttributes *attrs = gtk_source_view_get_mark_attributes(view, category, NULL);
+    GdkRGBA rgba;
+    if (attrs != NULL && gdk_rgba_parse(&rgba, color)) gtk_source_mark_attributes_set_background(attrs, &rgba);
+}
+
+void
+photon_document_set_marker_tint(PhotonDocument *doc, const gchar *error_tint, const gchar *warning_tint) {
+    set_tint(GTK_SOURCE_VIEW(doc->view), MARK_ERROR, error_tint);
+    set_tint(GTK_SOURCE_VIEW(doc->view), MARK_WARNING, warning_tint);
+    gtk_widget_queue_draw(doc->view);
+}
+
 void
 photon_document_clear_errors(PhotonDocument *doc) {
     GtkTextBuffer *buffer = GTK_TEXT_BUFFER(doc->buffer);

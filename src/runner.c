@@ -447,14 +447,12 @@ photon_runner_new(PhotonApp *app) {
     runner->make_choice = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
     runner->terminal = vte_terminal_new();
-    GdkRGBA fg, bg;
-    gdk_rgba_parse(&fg, "#cccccc");
-    gdk_rgba_parse(&bg, "#1e1e1e");
-    vte_terminal_set_colors(VTE_TERMINAL(runner->terminal), &fg, &bg, NULL, 0);
+    photon_theme_attach_terminal(app->theme, VTE_TERMINAL(runner->terminal));
     g_signal_connect(runner->terminal, "child-exited", G_CALLBACK(on_run_exited), runner);
 
     runner->page = gtk_scrolled_window_new(NULL, NULL);
     gtk_container_add(GTK_CONTAINER(runner->page), runner->terminal);
+    photon_theme_make_well(runner->page);
     photon_panel_add_tab(app->panel, runner->page, "Run");
     return runner;
 }

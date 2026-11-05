@@ -14,7 +14,9 @@
 
 typedef struct PhotonSettings PhotonSettings;
 
-PhotonSettings *photon_settings_load(void);   // missing file = empty settings
+// Missing file = empty settings. read_only: changes stay in memory, the
+// file is never written (smoke tests, screenshots).
+PhotonSettings *photon_settings_load(gboolean read_only);
 void            photon_settings_free(PhotonSettings *settings);
 
 // Newly allocated string, or NULL if not set.

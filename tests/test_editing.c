@@ -256,7 +256,7 @@ int
 main(int argc, char *argv[]) {
     gtk_init(&argc, &argv);
     photon_languages_init(".");    // run from the repo root
-    PhotonTheme *theme = photon_theme_new(".");
+    PhotonTheme *theme = photon_theme_new(".", NULL);
 
     test_registry();
     test_pairs();

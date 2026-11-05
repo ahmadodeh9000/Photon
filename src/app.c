@@ -28,6 +28,13 @@ update_title(PhotonApp *app, PhotonDocument *doc) {
     gchar *name = photon_document_get_title(doc);
     gchar *title = g_strdup_printf("%s - Photon", name);
     gtk_window_set_title(GTK_WINDOW(app->window), title);
+
+    // The strip shows the full path, like "Photon - [C:\TC\MAIN.C]"
+    const gchar *path = photon_document_get_path(doc);
+    gchar *strip = g_strdup_printf("Photon - [%s]", path != NULL ? path : name);
+    gtk_label_set_text(GTK_LABEL(app->title_label), strip);
+
+    g_free(strip);
     g_free(title);
     g_free(name);
 }
@@ -119,7 +126,8 @@ restore_session(PhotonApp *app) {
 // ---------------------------------------------------------------------
 static void
 add_document(PhotonApp *app, PhotonDocument *doc) {
-    photon_theme_style_buffer(app->theme, photon_document_get_buffer(doc));
+    photon_theme_attach_buffer(app->theme, photon_document_get_buffer(doc));
+    photon_document_set_marker_tint(doc, photon_theme_error_tint(app->theme), photon_theme_warning_tint(app->theme));
     photon_completion_attach(app->completion, doc);
     g_signal_connect(photon_document_get_buffer(doc), "notify::cursor-position", G_CALLBACK(on_cursor_moved), app);
     photon_tabs_add(app->tabs, doc);
@@ -385,6 +393,19 @@ photon_app_set_autosave(PhotonApp *app, gboolean on) {
 }
 
 void
+photon_app_set_theme(PhotonApp *app, const gchar *theme_id) {
+    if (!photon_theme_set(app->theme, theme_id)) return;
+    photon_settings_set_string(app->settings, EDITOR_GROUP, "theme", theme_id);
+
+    gtk_widget_set_visible(app->title_strip, photon_theme_has_title_strip(app->theme));
+    GList *docs = photon_tabs_list(app->tabs);
+    for (GList *l = docs; l != NULL; l = l->next) {
+        photon_document_set_marker_tint(l->data, photon_theme_error_tint(app->theme), photon_theme_warning_tint(app->theme));
+    }
+    g_list_free(docs);
+}
+
+void
 photon_app_zoom(PhotonApp *app, gint steps) {
     gint size = steps == 0 ? PHOTON_FONT_SIZE_DEFAULT : photon_theme_get_font_size(app->theme) + steps;
     photon_theme_set_font_size(app->theme, size);
@@ -491,18 +512,35 @@ on_window_key_press(GtkWidget *window, GdkEventKey *event, gpointer user_data G_
 }
 
 // ---------------------------------------------------------------------
-// Layout:  [ sidebar | menu bar / search bar / (tabs over panel) ]
-//          [ status bar                                          ]
+// Layout:  [ menu bar                                      ]
+//          [ sidebar | search bar / title strip + tabs     ]
+//          [         |            over the bottom panel    ]
+//          [ status bar                                    ]
 // ---------------------------------------------------------------------
+// Gradient strip with the file's path, above the tabs
+static GtkWidget *
+build_title_strip(PhotonApp *app) {
+    app->title_label = gtk_label_new("Photon");
+    gtk_label_set_xalign(GTK_LABEL(app->title_label), 0.0f);
+    gtk_label_set_ellipsize(GTK_LABEL(app->title_label), PANGO_ELLIPSIZE_START);
+    app->title_strip = gtk_event_box_new();
+    gtk_container_add(GTK_CONTAINER(app->title_strip), app->title_label);
+    gtk_style_context_add_class(gtk_widget_get_style_context(app->title_strip), "photon-titlebar");
+    return app->title_strip;
+}
+
 static GtkWidget *
 build_layout(PhotonApp *app) {
+    GtkWidget *editor = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_pack_start(GTK_BOX(editor), build_title_strip(app), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(editor), photon_tabs_get_widget(app->tabs), TRUE, TRUE, 0);
+
     GtkWidget *editor_split = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
-    gtk_paned_pack1(GTK_PANED(editor_split), photon_tabs_get_widget(app->tabs), TRUE, FALSE);
+    gtk_paned_pack1(GTK_PANED(editor_split), editor, TRUE, FALSE);
     gtk_paned_pack2(GTK_PANED(editor_split), photon_panel_get_widget(app->panel), FALSE, FALSE);
     gtk_paned_set_position(GTK_PANED(editor_split), 400);
 
     GtkWidget *right = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_box_pack_start(GTK_BOX(right), photon_menus_build(app), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(right), photon_search_get_widget(app->search), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(right), editor_split, TRUE, TRUE, 0);
 
@@ -512,6 +550,7 @@ build_layout(PhotonApp *app) {
     gtk_paned_set_position(GTK_PANED(main_split), 220);
 
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_pack_start(GTK_BOX(outer), photon_menus_build(app), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(outer), main_split, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(outer), photon_statusbar_get_widget(app->statusbar), FALSE, FALSE, 0);
     return outer;
@@ -541,12 +580,12 @@ create_modules(PhotonApp *app, const PhotonAppOptions *options) {
         .user_data = app,
     };
 
-    app->settings = photon_settings_load();
+    app->settings = photon_settings_load(options->read_only);
     app->statusbar = photon_statusbar_new(on_language_picked, app);
     app->completion = photon_completion_new();
     app->tabs = photon_tabs_new(&tab_callbacks);
     app->search = photon_search_new(search_target, app);
-    app->panel = photon_panel_new(options->root_dir);
+    app->panel = photon_panel_new(options->root_dir, app->theme);
     app->runner = photon_runner_new(app);
     app->sidebar = photon_sidebar_new(options->root_dir, on_sidebar_open, app);
 }
@@ -568,6 +607,10 @@ photon_app_new(const PhotonAppOptions *options) {
     photon_theme_set_font_size(app->theme,
         photon_settings_get_int(app->settings, EDITOR_GROUP, "font_size", PHOTON_FONT_SIZE_DEFAULT));
 
+    // Before the menus are built, so View > Theme shows the right one
+    gchar *theme_id = photon_settings_get_string(app->settings, EDITOR_GROUP, "theme");
+    if (theme_id == NULL || !photon_theme_set(app->theme, theme_id)) photon_theme_set(app->theme, PHOTON_THEME_DEFAULT);
+    g_free(theme_id);
     gtk_container_add(GTK_CONTAINER(app->window), build_layout(app));
     open_initial_files(app, options);
 
@@ -576,6 +619,7 @@ photon_app_new(const PhotonAppOptions *options) {
     if (!options->show_sidebar) gtk_widget_hide(photon_sidebar_get_widget(app->sidebar));
     gtk_widget_hide(photon_panel_get_widget(app->panel));
     photon_search_hide(app->search);
+    gtk_widget_set_visible(app->title_strip, photon_theme_has_title_strip(app->theme));
     update_window(app, photon_app_current_doc(app));
     return app;
 }

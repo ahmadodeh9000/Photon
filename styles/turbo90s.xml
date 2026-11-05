@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="turbo90s" _name="Turbo 90s" version="1.0">
+  <author>Ahmad Odeh</author>
+  <_description>The blue screen of a 1990s DOS IDE: yellow text on CGA blue</_description>
+
+  <!-- The 16-color CGA/VGA text-mode palette -->
+  <color name="blue"          value="#0000AA"/>
+  <color name="navy"          value="#000080"/>
+  <color name="cur-line"      value="#0000C4"/>
+  <color name="yellow"        value="#FFFF55"/>
+  <color name="white"         value="#FFFFFF"/>
+  <color name="grey"          value="#AAAAAA"/>
+  <color name="cyan"          value="#55FFFF"/>
+  <color name="dark-cyan"     value="#00AAAA"/>
+  <color name="green"         value="#55FF55"/>
+  <color name="magenta"       value="#FF55FF"/>
+  <color name="red"           value="#AA0000"/>
+  <color name="light-red"     value="#FF5555"/>
+  <color name="brown"         value="#AA5500"/>
+  <color name="black"         value="#000000"/>
+
+  <!-- Editor -->
+  <style name="text"                    foreground="yellow" background="blue"/>
+  <style name="selection"               foreground="black" background="dark-cyan"/>
+  <style name="selection-unfocused"     foreground="black" background="grey"/>
+  <style name="cursor"                  foreground="yellow"/>
+  <style name="secondary-cursor"        foreground="grey"/>
+  <style name="current-line"            background="cur-line"/>
+  <style name="line-numbers"            foreground="grey" background="navy"/>
+  <style name="current-line-number"     foreground="yellow" background="navy" bold="true"/>
+  <style name="bracket-match"           foreground="white" background="dark-cyan" bold="true"/>
+  <style name="bracket-mismatch"        foreground="white" background="red" bold="true"/>
+  <style name="right-margin"            foreground="grey" background="navy"/>
+  <style name="draw-spaces"             foreground="grey"/>
+  <style name="search-match"            foreground="white" background="brown"/>
+
+  <!-- Shared by every language (c.lang, python3.lang, lunar.lang ...) -->
+  <style name="def:comment"             foreground="grey"/>
+  <style name="def:shebang"             foreground="grey"/>
+  <style name="def:doc-comment-element" foreground="grey" bold="true"/>
+  <style name="def:keyword"             foreground="white" bold="true"/>
+  <style name="def:statement"           foreground="white" bold="true"/>
+  <style name="def:type"                foreground="magenta"/>
+  <style name="def:string"              foreground="cyan"/>
+  <style name="def:character"           foreground="cyan"/>
+  <style name="def:special-char"        foreground="white"/>
+  <style name="def:number"              foreground="green"/>
+  <style name="def:decimal"             foreground="green"/>
+  <style name="def:floating-point"      foreground="green"/>
+  <style name="def:base-n-integer"      foreground="green"/>
+  <style name="def:complex"             foreground="green"/>
+  <style name="def:boolean"             foreground="green"/>
+  <style name="def:constant"            foreground="green"/>
+  <style name="def:special-constant"    foreground="green"/>
+  <style name="def:builtin"             foreground="yellow"/>
+  <style name="def:function"            foreground="yellow"/>
+  <style name="def:identifier"          foreground="yellow"/>
+  <style name="def:operator"            foreground="white"/>
+  <style name="def:preprocessor"        foreground="light-red"/>
+  <style name="def:error"               foreground="white" background="red"/>
+  <style name="def:warning"             foreground="white" background="brown"/>
+  <style name="def:note"                foreground="black" background="dark-cyan"/>
+  <style name="def:net-address"         foreground="cyan" underline="true"/>
+
+  <!-- Lunar (lang/lunar.lang). Without these each falls back to its def:* style. -->
+  <style name="lunar:control-flow"      foreground="white" bold="true"/>
+  <style name="lunar:declaration"       foreground="white" bold="true"/>
+  <style name="lunar:self-super"        foreground="white" bold="true"/>
+  <style name="lunar:interpolation"     foreground="white" bold="true"/>
+  <style name="lunar:escape"            foreground="white"/>
+  <style name="lunar:invalid-escape"    foreground="white" background="red"/>
+  <style name="lunar:map-key"           foreground="yellow"/>
+  <style name="lunar:struct-name"       foreground="magenta"/>
+  <style name="lunar:constructor-call"  foreground="magenta"/>
+  <style name="lunar:function-name"     foreground="yellow" bold="true"/>
+  <style name="lunar:nil"               foreground="green"/>
+</style-scheme>

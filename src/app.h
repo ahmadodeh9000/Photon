@@ -37,6 +37,8 @@ struct PhotonApp {
     PhotonPanel      *panel;
     PhotonStatusbar  *statusbar;
     PhotonRunner     *runner;
+    GtkWidget        *title_strip;  // Win95 title bar above the tabs (some themes)
+    GtkWidget        *title_label;
     gchar            *root_dir;     // sidebar root; default folder for Save As
     gboolean          use_session;  // read/write the list of open files
     gboolean          restoring;    // reopening the session: don't save it meanwhile
@@ -50,6 +52,7 @@ typedef struct PhotonAppOptions {
     gboolean     show_sidebar;  // TRUE when Photon was started on a folder
     PhotonTheme *theme;         // required, outlives the app
     gboolean     use_session;   // reopen last files / remember open files
+    gboolean     read_only;     // never write settings.ini (smoke tests)
 } PhotonAppOptions;
 
 PhotonApp *photon_app_new(const PhotonAppOptions *options);
@@ -71,6 +74,9 @@ gboolean        photon_app_close_document(PhotonApp *app, PhotonDocument *doc); 
 gboolean photon_app_quit(PhotonApp *app);
 
 void photon_app_set_autosave(PhotonApp *app, gboolean on);
+
+// Switch theme (see theme.c) and remember it.
+void photon_app_set_theme(PhotonApp *app, const gchar *theme_id);
 
 // Zoom the code font by `steps` points; 0 resets it.
 void photon_app_zoom(PhotonApp *app, gint steps);

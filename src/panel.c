@@ -58,7 +58,7 @@ on_child_exited(VteTerminal *term G_GNUC_UNUSED, gint status G_GNUC_UNUSED, gpoi
 }
 
 PhotonPanel *
-photon_panel_new(const gchar *working_dir) {
+photon_panel_new(const gchar *working_dir, PhotonTheme *theme) {
     PhotonPanel *panel = g_new0(PhotonPanel, 1);
     panel->cwd = g_strdup(working_dir);
 
@@ -68,14 +68,12 @@ photon_panel_new(const gchar *working_dir) {
     g_object_ref_sink(panel->notebook);
 
     panel->terminal = vte_terminal_new();
-    GdkRGBA fg, bg;
-    gdk_rgba_parse(&fg, "#cccccc");
-    gdk_rgba_parse(&bg, "#1e1e1e");
-    vte_terminal_set_colors(VTE_TERMINAL(panel->terminal), &fg, &bg, NULL, 0);
+    photon_theme_attach_terminal(theme, VTE_TERMINAL(panel->terminal));
     g_signal_connect(panel->terminal, "child-exited", G_CALLBACK(on_child_exited), panel);
 
     panel->term_page = gtk_scrolled_window_new(NULL, NULL);
     gtk_container_add(GTK_CONTAINER(panel->term_page), panel->terminal);
+    photon_theme_make_well(panel->term_page);
     photon_panel_add_tab(panel, panel->term_page, "Terminal");
 
     spawn_shell(panel);

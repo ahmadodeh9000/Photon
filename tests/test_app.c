@@ -148,6 +148,30 @@ test_sidebar_refresh(PhotonTheme *theme, const gchar *dir) {
     g_free(path);
 }
 
+static const gchar *
+scheme_of(PhotonDocument *doc) {
+    return gtk_source_style_scheme_get_id(gtk_source_buffer_get_style_scheme(photon_document_get_buffer(doc)));
+}
+
+static void
+test_theme_switch(PhotonTheme *theme, const gchar *dir) {
+    PhotonApp *app = start(theme, dir, FALSE);
+    PhotonDocument *doc = photon_app_current_doc(app);
+    CHECK_STR(scheme_of(doc), "turbo90s");                      // the default
+    CHECK(gtk_widget_get_visible(app->title_strip));
+
+    photon_app_set_theme(app, "vscode-dark");
+    CHECK_STR(scheme_of(doc), "vscode-dark");                   // open buffers restyled
+    CHECK(!gtk_widget_get_visible(app->title_strip));
+    photon_app_free(app);
+
+    app = start(theme, dir, FALSE);                             // remembered
+    CHECK_STR(photon_theme_get_id(theme), "vscode-dark");
+    CHECK_STR(scheme_of(photon_app_current_doc(app)), "vscode-dark");
+    photon_app_set_theme(app, "turbo90s");
+    photon_app_free(app);
+}
+
 int
 main(int argc, char *argv[]) {
     gchar *dir = g_dir_make_tmp("photon-test-XXXXXX", NULL);
@@ -155,12 +179,13 @@ main(int argc, char *argv[]) {
     g_setenv("XDG_CONFIG_HOME", config, TRUE);   // never touch the real settings.ini
     gtk_init(&argc, &argv);
     photon_languages_init(".");
-    PhotonTheme *theme = photon_theme_new(".");
+    PhotonTheme *theme = photon_theme_new(".", NULL);
 
     test_tabs(theme, dir);
     test_session(theme, dir);
     test_language_picker(theme, dir);
     test_sidebar_refresh(theme, dir);
+    test_theme_switch(theme, dir);
 
     photon_theme_free(theme);
     g_free(config);

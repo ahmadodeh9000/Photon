@@ -153,10 +153,10 @@ main(int argc, char *argv[]) {
     gchar *data_dir = photon_platform_data_dir();
     if (data_dir == NULL) g_printerr("Photon data folder (lang/, styles/) not found; set PHOTON_DATA_DIR.\n");
     photon_languages_init(data_dir);
-    PhotonTheme *theme = photon_theme_new(data_dir);
+    PhotonTheme *theme = photon_theme_new(data_dir, NULL);   // the app applies the saved theme
 
     // Smoke tests and screenshots must not touch the user's open-files list
-    PhotonAppOptions options = { .theme = theme, .use_session = !args.smoke_test };
+    PhotonAppOptions options = { .theme = theme, .use_session = !args.smoke_test, .read_only = args.smoke_test };
     gchar *root_dir = NULL;
     resolve_options(&args, &options, &root_dir);
 

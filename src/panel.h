@@ -13,9 +13,12 @@
 
 #include <gtk/gtk.h>
 
+#include "theme.h"
+
 typedef struct PhotonPanel PhotonPanel;
 
-PhotonPanel *photon_panel_new(const gchar *working_dir);
+// The theme styles the terminal (and restyles it on theme switches).
+PhotonPanel *photon_panel_new(const gchar *working_dir, PhotonTheme *theme);
 void         photon_panel_free(PhotonPanel *panel);
 
 GtkWidget *photon_panel_get_widget(PhotonPanel *panel);

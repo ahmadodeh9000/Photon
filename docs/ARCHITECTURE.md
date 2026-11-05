@@ -28,12 +28,14 @@ src/languages.c/.h the language registry (one entry per language)
 src/statusbar.c/.h message, Ln/Col, language picker, run status
 src/settings.c/.h  settings.ini (GKeyFile) in g_get_user_config_dir()/photon:
                    [tools] lunar=, [session] files= current=, [editor] font_size=
-src/theme.c/.h     PhotonTheme: GTK CSS for the chrome, the code style scheme,
-                   font zoom
+src/theme.c/.h     theme registry (Turbo 90s, VS Code Dark): chrome CSS, code
+                   scheme, terminal colors/font; restyles attached buffers and
+                   terminals on a switch; font zoom
+src/about.c/.h     the About Photon dialog
 src/platform.c/.h  ALL OS-specific code (#ifdef __APPLE__ / __linux__)
 
 lang/             GtkSourceView language specs (lunar.lang)
-styles/           GtkSourceView style schemes (vscode-dark.xml)
+styles/           GtkSourceView style schemes (turbo90s.xml, vscode-dark.xml)
 icons/            app icon (1024 px + a 256 px copy for Linux icon themes)
 data/             photon.desktop (Linux only)
 tests/samples/    small Lunar / C / Python files for manual and CI checks
@@ -57,7 +59,7 @@ main ──> platform_init() + platform_data_dir() ──> languages_init() + th
            ├─ menus_build()     menu bar + shortcuts
            └─ restore session, open the file from the command line
 
-A new document goes through app.c add_document(): theme_style_buffer(),
+A new document goes through app.c add_document(): theme_attach_buffer(),
 completion_attach(), cursor -> status bar, tabs_add(). editing.c is
 attached by document_new() itself.
 ```
@@ -174,3 +176,18 @@ Then, only if needed:
 Run placeholders: `{file}` `{dir}` `{name}` (file name without extension)
 `{exe}` (`<tmp>/photon-<name>`) and any tool in `TOOLS`. Every value is
 shell-quoted; the command runs in the file's folder.
+
+## How to add a theme
+
+1. Write its CSS in `src/theme.c` (copy `VSCODE_CSS` for a small one or
+   `TURBO_CSS` for a full restyle). Photon's own widgets have CSS classes:
+   `.photon-titlebar`, `.photon-statusbar`, `.photon-search`,
+   `.photon-sunken` (editor / sidebar / terminal wells), `.photon-tab-close`,
+   `.photon-about-box`, `.photon-about-well`.
+2. Add `styles/<id>.xml`, a GtkSourceView scheme. Color the `def:*` styles
+   and you cover every language; add `lunar:*` styles for Lunar extras.
+   Include `search-match`, or GtkSourceView warns.
+3. Add one entry to `THEMES` (scheme id, terminal colors + Pango font list,
+   error-line tint, title strip on/off) and its id to `THEME_IDS`.
+
+It shows up under View > Theme on its own.

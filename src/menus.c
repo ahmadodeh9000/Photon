@@ -7,6 +7,7 @@
  * menus: menu bar + shortcuts. See menus.h.
  */
 #include "menus.h"
+#include "about.h"
 #include "editing.h"
 
 #include <vte/vte.h>
@@ -103,6 +104,16 @@ static void on_toggle_terminal(GtkWidget *i G_GNUC_UNUSED, gpointer app) { photo
 static void on_zoom_in(GtkWidget *i G_GNUC_UNUSED, gpointer app)         { photon_app_zoom(app, +1); }
 static void on_zoom_out(GtkWidget *i G_GNUC_UNUSED, gpointer app)        { photon_app_zoom(app, -1); }
 static void on_zoom_reset(GtkWidget *i G_GNUC_UNUSED, gpointer app)      { photon_app_zoom(app, 0); }
+
+static void
+on_theme_toggled(GtkCheckMenuItem *item, gpointer app) {
+    if (gtk_check_menu_item_get_active(item)) photon_app_set_theme(app, g_object_get_data(G_OBJECT(item), "photon-theme"));
+}
+
+static void
+on_about(GtkWidget *item G_GNUC_UNUSED, gpointer app) {
+    photon_about_show(GTK_WINDOW(((PhotonApp *)app)->window));
+}
 
 static void on_run(GtkWidget *i G_GNUC_UNUSED, gpointer app)  { photon_runner_run(((PhotonApp *)app)->runner); }
 static void on_stop(GtkWidget *i G_GNUC_UNUSED, gpointer app) { photon_runner_stop(((PhotonApp *)app)->runner); }
@@ -211,6 +222,24 @@ build_view_menu(PhotonApp *app, GtkWidget *menu_bar, GtkAccelGroup *accel) {
     GtkWidget *zoom_out = add_item(menu, accel, "Zoom Out", "<Primary>minus", G_CALLBACK(on_zoom_out), app);
     add_shortcut(zoom_out, accel, "<Primary>KP_Subtract", FALSE);
     add_item(menu, accel, "Actual Size", "<Primary>0", G_CALLBACK(on_zoom_reset), app);
+    add_separator(menu);
+
+    // View > Theme > (radio items, one per theme in theme.c)
+    GtkWidget *themes = gtk_menu_new();
+    GtkWidget *themes_item = gtk_menu_item_new_with_label("Theme");
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(themes_item), themes);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), themes_item);
+
+    GSList *group = NULL;
+    const gchar *active = photon_theme_get_id(app->theme);
+    for (const gchar *const *id = photon_theme_ids(); *id != NULL; id++) {
+        GtkWidget *item = gtk_radio_menu_item_new_with_label(group, photon_theme_name(*id));
+        group = gtk_radio_menu_item_get_group(GTK_RADIO_MENU_ITEM(item));
+        g_object_set_data(G_OBJECT(item), "photon-theme", (gpointer)*id);
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), g_strcmp0(*id, active) == 0);
+        g_signal_connect(item, "toggled", G_CALLBACK(on_theme_toggled), app);
+        gtk_menu_shell_append(GTK_MENU_SHELL(themes), item);
+    }
 }
 
 static void
@@ -233,6 +262,8 @@ photon_menus_build(PhotonApp *app) {
     build_edit_menu(app, menu_bar, accel);
     build_view_menu(app, menu_bar, accel);
     build_run_menu(app, menu_bar, accel);
+    GtkWidget *help = add_menu(menu_bar, "Help");
+    add_item(help, accel, "About Photon", NULL, G_CALLBACK(on_about), app);
 
     g_object_unref(accel); // the window holds its own reference
     return menu_bar;
