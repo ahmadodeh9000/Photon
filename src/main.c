@@ -125,6 +125,8 @@ finish_smoke_test(gpointer user_data) {
 
 int
 main(int argc, char *argv[]) {
+    photon_platform_init();
+
     Args args = { 0 };
     if (!parse_args(argc, argv, &args)) {
         print_usage();

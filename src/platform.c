@@ -9,13 +9,30 @@
 #include "platform.h"
 
 #ifdef __APPLE__
+#include <limits.h>
 #include <mach-o/dyld.h>
 #include <stdint.h>
+#include <sys/resource.h>
 #endif
 
 #ifndef PHOTON_DATADIR
 #define PHOTON_DATADIR "/usr/local/share/photon"
 #endif
+
+void
+photon_platform_init(void) {
+#ifdef __APPLE__
+    // VTE's fdwalk() on macOS sizes a stack buffer by the open-files soft
+    // limit. Started from a shell with a huge `ulimit -n` (1048576 is
+    // common), every terminal spawn segfaults in the child. macOS's own
+    // per-process maximum is OPEN_MAX (10240), so cap the soft limit there.
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) == 0 && limit.rlim_cur > OPEN_MAX) {
+        limit.rlim_cur = OPEN_MAX;
+        setrlimit(RLIMIT_NOFILE, &limit);
+    }
+#endif
+}
 
 static gchar *
 read_executable_path(void) {

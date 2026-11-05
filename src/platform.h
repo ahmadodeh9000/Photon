@@ -12,6 +12,9 @@
 
 #include <glib.h>
 
+// Process-wide OS fixes. Call first thing in main().
+void photon_platform_init(void);
+
 // Directory holding the running executable, or NULL if it can't be found.
 gchar *photon_platform_executable_dir(void);
 
