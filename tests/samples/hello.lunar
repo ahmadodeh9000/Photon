@@ -1,0 +1,10 @@
+// Photon sample: Lunar
+struct Greeter {
+    init(name) { self.name = name; }
+    greet() { ret "Hello, {self.name}! You have {len(self.name)} letters."; }
+}
+
+let scores = { ada: 3, linus: 5 };
+for (k in scores) {
+    print Greeter(k).greet();
+}

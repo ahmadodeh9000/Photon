@@ -25,51 +25,36 @@ photon ~/some/project  # open a directory
 
 ## Building
 
-Requires GTK3 and GtkSourceView 4 development headers.
+Requires GTK3, GtkSourceView 4 and VTE development packages. `make deps`
+prints the exact install command for your OS / distro:
 
 ```bash
 # Debian / Ubuntu
-sudo apt install libgtk-3-dev libgtksourceview-4-dev
-
-# Arch
-sudo pacman -S gtk3 gtksourceview4
+sudo apt install build-essential pkg-config libgtk-3-dev libgtksourceview-4-dev libvte-2.91-dev
 
 # Fedora
-sudo dnf install gtk3-devel gtksourceview4-devel
+sudo dnf install gcc make pkgconf-pkg-config gtk3-devel gtksourceview4-devel vte291-devel
 
-# macOS (Homebrew)
-brew install gtk+3 gtksourceview4 pkg-config
+# Arch
+sudo pacman -S --needed base-devel gtk3 gtksourceview4 vte3
+
+# macOS (Homebrew, Apple Silicon or Intel)
+brew install pkg-config gtk+3 gtksourceview4 vte3
 ```
 
 ```bash
 git clone https://github.com/ahmadodeh9000/Photon
 cd Photon
-make
-```
-
-### macOS notes
-
-Homebrew installs its libraries under `/opt/homebrew` on Apple Silicon or
-`/usr/local` on Intel. If `make` can't find `pkg-config` or the GTK headers,
-point it at Homebrew's prefix first:
-
-```bash
-export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH"
-```
-
-Run that once per terminal session (or add it to your `~/.zshrc`), then `make`
-as usual.
-
-The Lunar language spec and the color scheme need to be installed once:
-
-```bash
-make install-lang
-```
-
-Then run it:
-
-```bash
+make            # the Makefile finds Homebrew's pkg-config path on its own
 ./Photon
+```
+
+Nothing else needs installing: Photon loads `lang/` and `styles/` from next to
+the binary. To install system-wide (binary, language files, schemes, icon, and
+a `.desktop` entry on Linux):
+
+```bash
+sudo make install          # PREFIX=/usr/local by default
 ```
 
 ---
@@ -77,11 +62,13 @@ Then run it:
 ## Layout
 
 ```
-editor.c                main source
+src/                     C sources, one module per job (see docs/ARCHITECTURE.md)
 lang/lunar.lang          Lunar syntax definition
 styles/vscode-dark.xml   color scheme
-icons/                   app icon, various sizes
-Makefile
+icons/                   app icon
+data/photon.desktop      Linux desktop entry
+tests/samples/           sample Lunar / C / Python files
+Makefile                 one Makefile for Linux and macOS
 ```
 
 ---

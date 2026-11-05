@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Photon
+GenericName=Code Editor
+Comment=A small code editor for Lunar, C and Python
+Exec=photon %F
+Icon=photon
+Terminal=false
+Categories=Development;TextEditor;
+MimeType=text/plain;text/x-csrc;text/x-chdr;text/x-python;text/x-lunar;
