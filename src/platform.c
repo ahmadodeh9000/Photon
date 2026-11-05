@@ -84,6 +84,9 @@ photon_platform_data_dir(void) {
             g_strdup(exe_dir),                                        // ./Photon in the repo
             g_build_filename(exe_dir, "..", NULL),                    // build/ inside the repo
             g_build_filename(exe_dir, "..", "share", "photon", NULL), // <prefix>/bin/photon
+#ifdef __APPLE__
+            g_build_filename(exe_dir, "..", "Resources", NULL),       // Photon.app/Contents/MacOS
+#endif
             NULL
         };
         gchar *found = NULL;

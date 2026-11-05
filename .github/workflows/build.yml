@@ -12,6 +12,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
+    env:
+      # Linux has no screen on the runner: run GUI steps under a virtual one
+      GUI: ${{ startsWith(matrix.os, 'ubuntu') && 'xvfb-run -a' || '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,26 +33,31 @@ jobs:
       - name: Build (-Wall -Wextra -Werror)
         run: make WERROR=1
 
-      - name: Smoke test (Linux, headless)
-        if: runner.os == 'Linux'
+      - name: Smoke test and unit tests
         run: |
-          xvfb-run -a make check
-          xvfb-run -a make test
-          xvfb-run -a ./Photon --run --screenshot photon-run-${{ matrix.os }}.png tests/samples/hello.py
-          xvfb-run -a ./Photon --screenshot photon-${{ matrix.os }}.png tests/samples/hello.lunar
+          $GUI make check
+          $GUI make test
 
-      - name: Smoke test (macOS)
-        if: runner.os == 'macOS'
+      - name: Screenshots (every theme, and a run)
         run: |
-          make check
-          make test
-          ./Photon --run --screenshot photon-run-${{ matrix.os }}.png tests/samples/hello.py
-          ./Photon --screenshot photon-${{ matrix.os }}.png tests/samples/hello.lunar
+          $GUI ./Photon --run --screenshot photon-run-${{ matrix.os }}.png tests/samples/hello.py
+          for theme in turbo90s notepad95 amber green hotdog vscode-dark; do
+            $GUI ./Photon --theme "$theme" --screenshot "photon-$theme-${{ matrix.os }}.png" tests/samples/hello.lunar
+          done
 
-      - name: Upload screenshot
+      - name: install.sh (into a temp folder) and uninstall
+        run: |
+          prefix="$RUNNER_TEMP/photon"
+          ./install.sh --prefix "$prefix" --yes
+          "$prefix/bin/photon" --version
+          (cd "$RUNNER_TEMP" && $GUI "$prefix/bin/photon" --smoke-test)
+          ./install.sh --prefix "$prefix" --uninstall
+          test ! -e "$prefix/bin/photon"
+
+      - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshot-${{ matrix.os }}
+          name: screenshots-${{ matrix.os }}
           path: photon-*.png
           if-no-files-found: ignore

@@ -28,8 +28,17 @@ photon --run game.lunar # open a file and run it right away
 - **Tabs** with an unsaved `*` mark; the files you had open come back next time
 - **Find / replace**, go to line, duplicate and move lines, smart Enter in `{}`
 - **Terminal** tab with your own shell
-- **Themes**: *Turbo 90s* (Windows 95 chrome around a Borland Turbo C++ blue
-  code area, the default) and *VS Code Dark*, under View > Theme
+- **Themes** under View > Theme (or `photon --theme ID` for one run):
+
+  | Theme | ID | Look |
+  |---|---|---|
+  | Turbo 90s (default) | `turbo90s` | Windows 95 chrome around a Borland Turbo C++ blue screen |
+  | Notepad 95 | `notepad95` | the same chrome, black on white like the editors of the day |
+  | Amber CRT | `amber` | an amber monochrome monitor, terminal included |
+  | Green Phosphor | `green` | a green-screen terminal |
+  | Hot Dog Stand | `hotdog` | red and mustard, after the loudest Windows 3.1 color scheme |
+  | VS Code Dark | `vscode-dark` | the modern dark look |
+
 - Zoom, auto save, a file tree that refreshes when you save
 
 ---
@@ -62,7 +71,35 @@ Ctrl+R... work as in any terminal); use Ctrl+Shift+C / V to copy and paste there
 
 ---
 
-## Building
+## Install
+
+```bash
+git clone https://github.com/ahmadodeh9000/Photon
+cd Photon
+./install.sh --deps
+```
+
+That builds Photon and installs it **for you only** (no sudo):
+
+- **macOS**: `~/Applications/Photon.app` (Launchpad, Dock and Spotlight show its
+  icon) and a `photon` command in `~/.local/bin`
+- **Linux**: `photon` in `~/.local/bin`, plus an entry with the icon in your
+  applications menu
+
+`--deps` installs the build dependencies first, after asking (Homebrew on macOS;
+apt, dnf or pacman on Linux). Other options:
+
+```bash
+./install.sh --system        # for everyone: /Applications or /usr/local (uses sudo)
+./install.sh --prefix DIR    # somewhere else
+./install.sh --uninstall     # remove it again (add --system / --prefix if you used them)
+```
+
+If `~/.local/bin` isn't on your `PATH`, the installer tells you the line to add.
+
+---
+
+## Building by hand
 
 You need GTK3, GtkSourceView 4 and VTE development packages. `make deps`
 prints the exact install command for your system:
@@ -94,6 +131,7 @@ and a `.desktop` entry on Linux):
 
 ```bash
 sudo make install          # PREFIX=/usr/local by default; make uninstall undoes it
+make app                   # macOS: build/Photon.app (make install-app copies it)
 ```
 
 Other targets: `make test` (unit tests), `make check` (start, check, quit),
@@ -109,10 +147,17 @@ Other targets: `make test` (unit tests), `make check` (start, check, quit),
 
 ### Fonts
 
-The Turbo 90s theme uses a DOS font for code and a Windows 95 font for menus
-if you have them installed, e.g. [Px437 IBM VGA 8x16](https://int10h.org/oldschool-pc-fonts/)
-and Pixelated MS Sans Serif. Without them it uses Menlo / Tahoma / Geneva on
-macOS and DejaVu on Linux, and still looks the part.
+The 90s themes use period fonts if you have them installed: a DOS font such as
+[Px437 IBM VGA 8x16](https://int10h.org/oldschool-pc-fonts/), Fixedsys
+Excelsior, and Pixelated MS Sans Serif for menus. Without them they use
+Menlo / Monaco / Tahoma / Geneva on macOS and DejaVu on Linux, and still look
+the part.
+
+### The icon
+
+The icon is 32x32 pixel art (a 90s monitor with the photon's γ on a Turbo-blue
+screen), drawn as text in `tools/make_icon.py`. Edit the `ART` grid and run
+`python3 tools/make_icon.py` to regenerate every size and the macOS `.icns`.
 
 Settings live in `settings.ini` in your user config folder (`~/.config/photon`
 on Linux).
@@ -149,9 +194,10 @@ covers the details, plus how to add menu items, shortcuts and themes.
 ```
 src/                     C sources, one module per job (see docs/ARCHITECTURE.md)
 lang/lunar.lang          Lunar syntax definition
-styles/                  code color schemes: turbo90s.xml, vscode-dark.xml
-icons/                   app icon
-data/photon.desktop      Linux desktop entry
+styles/                  code color schemes, one per theme
+icons/                   app icon, every size + photon.icns (from tools/make_icon.py)
+data/                    Linux .desktop entry, macOS Info.plist + launcher
+install.sh               installer for macOS and Linux
 tests/                   unit tests and sample Lunar / C / Python files
 Makefile                 one Makefile for Linux and macOS
 ```
