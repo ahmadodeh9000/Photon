@@ -55,4 +55,14 @@
   <style name="def:error"               foreground="red" underline="true"/>
   <style name="def:warning"             foreground="yellow-gold" underline="true"/>
   <style name="def:note"                foreground="cyan" italic="true"/>
+  <!-- Lunar-specific (lang/lunar.lang). Without these, each falls back to its def:* style. -->
+  <style name="lunar:control-flow"      foreground="purple"/>
+  <style name="lunar:interpolation"     foreground="blue"/>
+  <style name="lunar:invalid-escape"    foreground="red" underline="true"/>
+  <style name="lunar:map-key"           foreground="light-blue"/>
+  <style name="lunar:constructor-call"  foreground="cyan"/>
+  <style name="lunar:struct-name"       foreground="cyan"/>
+  <style name="lunar:self-super"        foreground="blue"/>
+  <style name="lunar:sdl-function"      foreground="light-yellow"/>
+  <style name="lunar:ffi-function"      foreground="light-yellow"/>
 </style-scheme>

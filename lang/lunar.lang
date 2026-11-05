@@ -1,176 +1,306 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<language id="lunar" _name="Lunar" version="2.0" _section="Source">
+<!--
+  Lunar syntax highlighting for GtkSourceView 4.
+  Tracks the Lunar scanner (src/scanner.c) and built-ins (src/lunar_std.c,
+  src/lunar_ffi.c, src/lunar_sdl.c, src/lunar_modules.c).
+
+  Style ids are namespaced as "lunar:<id>" so a scheme can color them
+  individually (see styles/vscode-dark.xml); each one also falls back to a
+  def:* style so any scheme works.
+-->
+<language id="lunar" name="Lunar" version="2.0" _section="Source">
   <metadata>
     <property name="mimetypes">text/x-lunar</property>
     <property name="globs">*.lunar;*.lun</property>
     <property name="line-comment-start">//</property>
+    <property name="suggested-suffix">.lunar</property>
   </metadata>
 
   <styles>
-    <style id="keyword"        _name="Keyword"          map-to="def:keyword"/>
-    <style id="control-flow"   _name="Control Flow"     map-to="def:keyword"/>
-    <style id="struct-kw"      _name="Struct Keyword"   map-to="def:keyword"/>
-    <style id="self-super"     _name="Self/Super"       map-to="def:special-constant"/>
-    <style id="boolean"        _name="Boolean"          map-to="def:boolean"/>
-    <style id="nil"            _name="Nil"              map-to="def:special-constant"/>
-    <style id="string"         _name="String"           map-to="def:string"/>
-    <style id="escape"         _name="Escape"           map-to="def:special-char"/>
-    <style id="comment"        _name="Comment"          map-to="def:comment"/>
-    <style id="number"         _name="Number"           map-to="def:decimal"/>
-    <style id="builtin-func"   _name="Built-in Function" map-to="def:builtin"/>
-    <style id="ffi-func"       _name="FFI Function"     map-to="def:builtin"/>
-    <style id="sdl-func"       _name="SDL Function"     map-to="def:builtin"/>
-    <style id="operator"       _name="Operator"         map-to="def:operator"/>
-    <style id="struct-name"    _name="Struct Name"      map-to="def:type"/>
-    <style id="function-name"  _name="Function Name"    map-to="def:function"/>
+    <style id="comment"            name="Comment"              map-to="def:comment"/>
+    <style id="keyword"            name="Keyword"              map-to="def:keyword"/>
+    <style id="control-flow"       name="Control Flow"         map-to="def:keyword"/>
+    <style id="declaration"        name="Declaration"          map-to="def:keyword"/>
+    <style id="self-super"         name="Self/Super"           map-to="def:special-constant"/>
+    <style id="boolean"            name="Boolean"              map-to="def:boolean"/>
+    <style id="nil"                name="Nil"                  map-to="def:special-constant"/>
+    <style id="number"             name="Number"               map-to="def:decimal"/>
+    <style id="string"             name="String"               map-to="def:string"/>
+    <style id="escape"             name="Escape"               map-to="def:special-char"/>
+    <style id="invalid-escape"     name="Invalid Escape"       map-to="def:error"/>
+    <style id="interpolation"      name="Interpolation Braces" map-to="def:special-char"/>
+    <style id="builtin-function"   name="Built-in Function"    map-to="def:builtin"/>
+    <style id="ffi-function"       name="FFI Function"         map-to="def:builtin"/>
+    <style id="sdl-function"       name="SDL Function"         map-to="def:builtin"/>
+    <style id="struct-name"        name="Struct Name"          map-to="def:type"/>
+    <style id="constructor-call"   name="Constructor Call"     map-to="def:type"/>
+    <style id="function-name"      name="Function Name"        map-to="def:function"/>
+    <style id="function-call"      name="Function Call"        map-to="def:function"/>
+    <style id="map-key"            name="Map Key"              map-to="def:identifier"/>
+    <style id="operator"           name="Operator"             map-to="def:operator"/>
   </styles>
 
   <definitions>
 
-    <!-- Comments: Lunar only has line comments -->
-    <context id="line-comment" style-ref="comment" end-at-line-end="true">
+    <!-- ===== Comments: Lunar only has // line comments ===== -->
+    <context id="line-comment" style-ref="comment" end-at-line-end="true" class="comment" class-disabled="no-spell-check">
       <start>//</start>
       <include>
         <context ref="def:in-line-comment"/>
       </include>
     </context>
 
-    <!-- Strings: multi-line supported, backslash escapes -->
+    <!-- ===== Strings ===== -->
+    <!-- Only \n \t \" \\ \{ are valid; anything else is a compile error. -->
     <context id="escape" style-ref="escape">
+      <match>\\[nt"\\{]</match>
+    </context>
+
+    <context id="invalid-escape" style-ref="invalid-escape">
       <match>\\.</match>
     </context>
 
-    <context id="string" style-ref="string">
-      <start>"</start>
-      <end>"</end>
+    <!-- Plain text runs inside a string: before the first {, and after each } -->
+    <context id="string-head" style-ref="string" once-only="true" class="string" class-disabled="no-spell-check">
+      <start>(?&lt;=")</start>
+      <end>(?=["{])</end>
       <include>
         <context ref="escape"/>
+        <context ref="invalid-escape"/>
       </include>
     </context>
 
-    <!-- Numbers: 64-bit doubles, ints and decimals -->
+    <context id="string-tail" style-ref="string" class="string" class-disabled="no-spell-check">
+      <start>(?&lt;=})</start>
+      <end>(?=["{])</end>
+      <include>
+        <context ref="escape"/>
+        <context ref="invalid-escape"/>
+      </include>
+    </context>
+
+    <!-- "{expr}" : the braces get their own color, the expression is real code -->
+    <context id="interpolation">
+      <start>\{</start>
+      <end>\}</end>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="interpolation"/>
+        <context sub-pattern="0" where="end" style-ref="interpolation"/>
+        <context ref="code"/>
+      </include>
+    </context>
+
+    <!-- Multi-line strings are allowed, so no end-at-line-end -->
+    <context id="string" class="string" class-disabled="no-spell-check">
+      <start>"</start>
+      <end>"</end>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="string"/>
+        <context sub-pattern="0" where="end" style-ref="string"/>
+        <context ref="string-head"/>
+        <context ref="interpolation"/>
+        <context ref="string-tail"/>
+      </include>
+    </context>
+
+    <!-- ===== Literals ===== -->
+    <!-- 64-bit doubles: 42, 3.14 (no hex or exponent literals; use hex("ff")) -->
     <context id="number" style-ref="number">
-      <match extended="true">
-        \b [0-9]+ (\.[0-9]+)? \b
-      </match>
+      <match>\b[0-9]+(\.[0-9]+)?\b</match>
     </context>
 
-    <!-- self / super -->
-    <context id="self-super" style-ref="self-super">
-      <keyword>self</keyword>
-      <keyword>super</keyword>
-    </context>
-
-    <!-- true / false -->
     <context id="boolean" style-ref="boolean">
       <keyword>true</keyword>
       <keyword>false</keyword>
     </context>
 
-    <!-- nil -->
     <context id="nil" style-ref="nil">
       <keyword>nil</keyword>
     </context>
 
-    <!-- struct declaration keyword -->
-    <context id="struct-kw" style-ref="struct-kw">
+    <context id="self-super" style-ref="self-super">
+      <keyword>self</keyword>
+      <keyword>super</keyword>
+    </context>
+
+    <!-- ===== Declarations ===== -->
+    <!-- struct Name  /  struct Name < Parent -->
+    <context id="struct-declaration">
+      <match>\b(struct)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*(&lt;)\s*([A-Za-z_][A-Za-z0-9_]*))?</match>
+      <include>
+        <context sub-pattern="1" style-ref="declaration"/>
+        <context sub-pattern="2" style-ref="struct-name"/>
+        <context sub-pattern="3" style-ref="operator"/>
+        <context sub-pattern="4" style-ref="struct-name"/>
+      </include>
+    </context>
+
+    <!-- fn name -->
+    <context id="function-declaration">
+      <match>\b(fn)\s+([A-Za-z_][A-Za-z0-9_]*)</match>
+      <include>
+        <context sub-pattern="1" style-ref="declaration"/>
+        <context sub-pattern="2" style-ref="function-name"/>
+      </include>
+    </context>
+
+    <!-- Struct methods:   name(params) {   at the start of a line -->
+    <context id="method-declaration">
+      <match>^\s*((?!(?:if|while|for|catch|fn|print|ret|throw|import)\b)[A-Za-z_][A-Za-z0-9_]*)(?=\s*\([^()]*\)\s*\{)</match>
+      <include>
+        <context sub-pattern="1" style-ref="function-name"/>
+      </include>
+    </context>
+
+    <context id="declarations" style-ref="declaration">
+      <keyword>let</keyword>
+      <keyword>fn</keyword>
       <keyword>struct</keyword>
     </context>
 
-    <!-- control flow -->
+    <!-- ===== Keywords ===== -->
     <context id="control-flow" style-ref="control-flow">
       <keyword>if</keyword>
       <keyword>else</keyword>
       <keyword>while</keyword>
       <keyword>for</keyword>
+      <keyword>in</keyword>
+      <keyword>break</keyword>
+      <keyword>continue</keyword>
       <keyword>ret</keyword>
+      <keyword>try</keyword>
+      <keyword>catch</keyword>
+      <keyword>throw</keyword>
     </context>
 
-    <!-- general keywords -->
     <context id="keywords" style-ref="keyword">
-      <keyword>let</keyword>
-      <keyword>fn</keyword>
       <keyword>print</keyword>
-      <keyword>init</keyword>
+      <keyword>import</keyword>
     </context>
 
-    <!-- built-in stdlib functions -->
-    <context id="builtin-functions" style-ref="builtin-func">
+    <!-- ===== Built-ins ===== -->
+    <context id="builtin-functions" style-ref="builtin-function">
+      <prefix>\b</prefix>
+      <suffix>(?=\s*\()</suffix>
       <keyword>clock</keyword>
       <keyword>sqrt</keyword>
       <keyword>abs</keyword>
       <keyword>floor</keyword>
       <keyword>ceil</keyword>
+      <keyword>sin</keyword>
+      <keyword>cos</keyword>
+      <keyword>tan</keyword>
+      <keyword>atan2</keyword>
+      <keyword>pow</keyword>
+      <keyword>min</keyword>
+      <keyword>max</keyword>
       <keyword>str</keyword>
       <keyword>len</keyword>
+      <keyword>hex</keyword>
       <keyword>random</keyword>
+      <keyword>push</keyword>
+      <keyword>pop</keyword>
+      <keyword>has</keyword>
+      <keyword>keys</keyword>
+      <keyword>remove</keyword>
     </context>
 
-    <!-- FFI functions -->
-    <context id="ffi-functions" style-ref="ffi-func">
+    <context id="ffi-functions" style-ref="ffi-function">
+      <prefix>\b</prefix>
+      <suffix>(?=\s*\()</suffix>
       <keyword>clib</keyword>
       <keyword>cbind</keyword>
     </context>
 
-    <!-- SDL2 functions -->
-    <context id="sdl-functions" style-ref="sdl-func">
+    <context id="sdl-functions" style-ref="sdl-function">
       <keyword>sdl_init</keyword>
       <keyword>sdl_quit</keyword>
       <keyword>sdl_poll</keyword>
       <keyword>sdl_clear</keyword>
-      <keyword>sdl_fill_rect</keyword>
       <keyword>sdl_present</keyword>
-      <keyword>sdl_key_down</keyword>
       <keyword>sdl_delay</keyword>
+      <keyword>sdl_fill_rect</keyword>
+      <keyword>sdl_draw_tri</keyword>
+      <keyword>sdl_draw_tri_tex</keyword>
+      <keyword>sdl_draw_tris</keyword>
       <keyword>sdl_load_texture</keyword>
       <keyword>sdl_draw_texture</keyword>
       <keyword>sdl_texture_width</keyword>
       <keyword>sdl_texture_height</keyword>
+      <keyword>sdl_key_down</keyword>
+      <keyword>sdl_set_relative_mouse</keyword>
+      <keyword>sdl_mouse_dx</keyword>
+      <keyword>sdl_mouse_dy</keyword>
+      <keyword>sdl_mouse_down</keyword>
+      <keyword>sdl_time</keyword>
+      <keyword>sdl_set_vsync</keyword>
+      <keyword>sdl_set_blend</keyword>
     </context>
 
-    <!-- Operators: arithmetic, bitwise, comparison, logic -->
+    <!-- ===== Calls and map keys ===== -->
+    <!-- Point(0, 0): structs are called like functions; capitalized = type color -->
+    <context id="constructor-call" style-ref="constructor-call">
+      <match>\b[A-Z][A-Za-z0-9_]*(?=\s*\()</match>
+    </context>
+
+    <context id="function-call" style-ref="function-call">
+      <match>\b[A-Za-z_][A-Za-z0-9_]*(?=\s*\()</match>
+    </context>
+
+    <!-- { hp: 10, name: "Rex" } : ':' only appears in map literals -->
+    <context id="map-key" style-ref="map-key">
+      <match>\b[A-Za-z_][A-Za-z0-9_]*(?=\s*:)</match>
+    </context>
+
+    <!-- ===== Operators ===== -->
     <context id="operator" style-ref="operator">
       <match extended="true">
-        \*\*  |          # power
-        &lt;&lt; | &gt;&gt; |   # shifts
-        &amp;&amp; | \|\| |    # logic and/or
+        \*\* | &lt;&lt; | &gt;&gt; | &amp;&amp; | \|\| |
         == | != | &lt;= | &gt;= |
         [+\-*/%&amp;|\^~!&lt;&gt;=]
       </match>
     </context>
 
-    <!-- Struct name after 'struct' keyword and after '<' for inheritance -->
-    <context id="struct-name" style-ref="struct-name">
-      <match extended="true">
-        (?&lt;=\bstruct\s) [A-Za-z_][A-Za-z0-9_]* |
-        (?&lt;=&lt;\s) [A-Za-z_][A-Za-z0-9_]*
-      </match>
+    <!-- Braces inside code (blocks, map literals). Matching them as a pair keeps
+         a map literal inside "{...}" interpolation from closing it early. -->
+    <context id="braces">
+      <start>\{</start>
+      <end>\}</end>
+      <include>
+        <context ref="code"/>
+      </include>
     </context>
 
-    <!-- Function name after 'fn' keyword -->
-    <context id="function-name" style-ref="function-name">
-      <match extended="true">
-        (?&lt;=\bfn\s) [A-Za-z_][A-Za-z0-9_]*
-      </match>
-    </context>
-
-    <context id="lunar">
+    <!-- ===== Everything that can appear in code ===== -->
+    <!-- Order matters: earlier contexts win when two match at the same spot. -->
+    <context id="code">
       <include>
         <context ref="line-comment"/>
         <context ref="string"/>
         <context ref="number"/>
-        <context ref="self-super"/>
         <context ref="boolean"/>
         <context ref="nil"/>
-        <context ref="struct-kw"/>
-        <context ref="struct-name"/>
-        <context ref="function-name"/>
+        <context ref="self-super"/>
+        <context ref="struct-declaration"/>
+        <context ref="function-declaration"/>
         <context ref="control-flow"/>
         <context ref="keywords"/>
+        <context ref="declarations"/>
+        <context ref="method-declaration"/>
         <context ref="builtin-functions"/>
         <context ref="ffi-functions"/>
         <context ref="sdl-functions"/>
+        <context ref="constructor-call"/>
+        <context ref="function-call"/>
+        <context ref="map-key"/>
         <context ref="operator"/>
+        <context ref="braces"/>
+      </include>
+    </context>
+
+    <context id="lunar" class="no-spell-check">
+      <include>
+        <context ref="code"/>
       </include>
     </context>
 
