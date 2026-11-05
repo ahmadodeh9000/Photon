@@ -56,7 +56,7 @@ LDLIBS   += $(PKG_LIBS)
 SRCS := $(wildcard src/*.c)
 OBJS := $(patsubst src/%.c,$(BUILDDIR)/%.o,$(SRCS))
 LIB_OBJS := $(filter-out $(BUILDDIR)/main.o,$(OBJS))   # everything but main(), for tests
-TESTS := $(BUILDDIR)/test_errors $(BUILDDIR)/test_editing
+TESTS := $(BUILDDIR)/test_errors $(BUILDDIR)/test_editing $(BUILDDIR)/test_app
 
 .PHONY: all deps check test install uninstall clean
 

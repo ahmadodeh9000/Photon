@@ -101,6 +101,15 @@ photon_platform_data_dir(void) {
     return NULL;
 }
 
+gboolean
+photon_platform_primary_is_control(void) {
+#ifdef __APPLE__
+    return FALSE;
+#else
+    return TRUE;
+#endif
+}
+
 const gchar *
 photon_platform_fallback_shell(void) {
 #ifdef __APPLE__

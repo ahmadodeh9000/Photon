@@ -18,6 +18,15 @@
 
 typedef struct PhotonDocument PhotonDocument;
 
+// What changed, for the one listener a document has (tabs.c)
+typedef enum {
+    PHOTON_DOC_DIRTY    = 1 << 0,   // modified flag flipped
+    PHOTON_DOC_PATH     = 1 << 1,   // loaded / saved under a new name
+    PHOTON_DOC_LANGUAGE = 1 << 2,   // language entry changed
+} PhotonDocChange;
+
+typedef void (*PhotonDocumentListener)(PhotonDocument *doc, PhotonDocChange what, gpointer user_data);
+
 PhotonDocument *photon_document_new(void);
 void            photon_document_free(PhotonDocument *doc);
 
@@ -33,6 +42,17 @@ gboolean photon_document_save(PhotonDocument *doc, GError **error);
 // Point the document at a file that doesn't exist yet (so Save writes there).
 // Also picks the language (highlighting, indent, comment marker) from it.
 void photon_document_set_path(PhotonDocument *doc, const gchar *path);
+
+// Force a language (new files, the status bar picker). NULL = plain text.
+void photon_document_set_language(PhotonDocument *doc, const PhotonLanguage *language);
+
+void photon_document_set_listener(PhotonDocument *doc, PhotonDocumentListener listener, gpointer user_data);
+
+// File name for tabs and the title bar: "main.lunar", or "Untitled.lunar".
+gchar *photon_document_get_title(PhotonDocument *doc);
+
+// Untitled, unmodified and empty: safe to replace with an opened file.
+gboolean photon_document_is_blank(PhotonDocument *doc);
 
 const gchar          *photon_document_get_path(PhotonDocument *doc);      // NULL if untitled
 const PhotonLanguage *photon_document_get_language(PhotonDocument *doc);  // NULL if unknown

@@ -111,6 +111,103 @@ handle_backspace(const PhotonLanguage *lang, GtkTextBuffer *buffer) {
     return TRUE;
 }
 
+// ---------------------------------------------------------------------
+// Indentation helpers
+// ---------------------------------------------------------------------
+
+// Leading whitespace of the cursor's line, up to the cursor
+static gchar *
+line_indent(GtkTextBuffer *buffer, const GtkTextIter *cursor) {
+    GtkTextIter start = *cursor, end;
+    gtk_text_iter_set_line_offset(&start, 0);
+    end = start;
+    while (gtk_text_iter_compare(&end, cursor) < 0 && (gtk_text_iter_get_char(&end) == ' ' || gtk_text_iter_get_char(&end) == '\t')) {
+        gtk_text_iter_forward_char(&end);
+    }
+    return gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+}
+
+// Is everything between the line start and the cursor blank?
+static gboolean
+only_blanks_before(const GtkTextIter *cursor) {
+    GtkTextIter iter = *cursor;
+    gtk_text_iter_set_line_offset(&iter, 0);
+    for (; gtk_text_iter_compare(&iter, cursor) < 0; gtk_text_iter_forward_char(&iter)) {
+        gunichar c = gtk_text_iter_get_char(&iter);
+        if (c != ' ' && c != '\t') return FALSE;
+    }
+    return TRUE;
+}
+
+// Last non-blank char before the cursor on the same line, or 0
+static gunichar
+last_char_before(const GtkTextIter *cursor) {
+    GtkTextIter iter = *cursor;
+    while (!gtk_text_iter_starts_line(&iter) && gtk_text_iter_backward_char(&iter)) {
+        gunichar c = gtk_text_iter_get_char(&iter);
+        if (c != ' ' && c != '\t') return c;
+    }
+    return 0;
+}
+
+// Enter after "{" (or ":" in Python) indents one level; Enter between "{}"
+// opens a block:   {|}   ->   {
+//                                 |
+//                             }
+static gboolean
+handle_return(const PhotonLanguage *lang, GtkTextBuffer *buffer) {
+    GtkTextIter cursor;
+    if (lang->indent_after == NULL || gtk_text_buffer_get_has_selection(buffer)) return FALSE;
+    gtk_text_buffer_get_iter_at_mark(buffer, &cursor, gtk_text_buffer_get_insert(buffer));
+
+    gunichar opener = last_char_before(&cursor);
+    if (opener == 0 || strchr(lang->indent_after, (int)opener) == NULL) return FALSE;
+
+    gchar *indent = line_indent(buffer, &cursor);
+    gchar *unit = g_strnfill(lang->indent, ' ');
+    gboolean closes = closer_for(lang, opener) != 0 && gtk_text_iter_get_char(&cursor) == closer_for(lang, opener);
+
+    gchar *first = g_strconcat("\n", indent, unit, NULL);
+    gtk_text_buffer_begin_user_action(buffer);
+    gtk_text_buffer_insert(buffer, &cursor, first, -1);
+    if (closes) {
+        GtkTextMark *here = gtk_text_buffer_create_mark(buffer, NULL, &cursor, TRUE);
+        gchar *second = g_strconcat("\n", indent, NULL);
+        gtk_text_buffer_insert(buffer, &cursor, second, -1);
+        gtk_text_buffer_get_iter_at_mark(buffer, &cursor, here);
+        gtk_text_buffer_delete_mark(buffer, here);
+        g_free(second);
+    }
+    gtk_text_buffer_place_cursor(buffer, &cursor);
+    gtk_text_buffer_end_user_action(buffer);
+
+    g_free(first);
+    g_free(unit);
+    g_free(indent);
+    return TRUE;
+}
+
+// Typing "}" on a blank line removes one indent level first
+static void
+dedent_for_closer(const PhotonLanguage *lang, GtkTextBuffer *buffer, gunichar c) {
+    GtkTextIter cursor, start;
+    if (lang->indent_after == NULL) return;
+
+    gboolean closes_indent = FALSE;
+    for (const gchar *o = lang->indent_after; *o != '\0'; o++) {
+        if (closer_for(lang, (gunichar)*o) == c) closes_indent = TRUE;
+    }
+    gtk_text_buffer_get_iter_at_mark(buffer, &cursor, gtk_text_buffer_get_insert(buffer));
+    if (!closes_indent || !only_blanks_before(&cursor)) return;
+
+    gint column = gtk_text_iter_get_line_offset(&cursor);
+    gint remove = MIN(column, (gint)lang->indent);
+    if (remove == 0) return;
+    start = cursor;
+    gtk_text_iter_backward_chars(&start, remove);
+    gtk_text_buffer_delete(buffer, &start, &cursor);
+}
+
 static gboolean
 handle_char(const PhotonLanguage *lang, GtkTextBuffer *buffer, gunichar c) {
     GtkTextIter cursor;
@@ -122,6 +219,14 @@ handle_char(const PhotonLanguage *lang, GtkTextBuffer *buffer, gunichar c) {
         gtk_text_iter_forward_char(&cursor);
         gtk_text_buffer_place_cursor(buffer, &cursor);
         return TRUE;
+    }
+
+    // "}" typed on a blank line: dedent, then let GTK insert it
+    if (!has_selection && is_closer(lang, c) && closer_for(lang, c) != c) {
+        gtk_text_buffer_begin_user_action(buffer);
+        dedent_for_closer(lang, buffer, c);
+        gtk_text_buffer_end_user_action(buffer);
+        return FALSE;
     }
 
     gunichar close = closer_for(lang, c);
@@ -144,6 +249,11 @@ on_key_press(GtkWidget *view, GdkEventKey *event, gpointer user_data) {
 
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
     if (event->keyval == GDK_KEY_BackSpace) return handle_backspace(lang, buffer);
+    if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter) {
+        if ((event->state & GDK_SHIFT_MASK) || !handle_return(lang, buffer)) return FALSE;
+        gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(view), gtk_text_buffer_get_insert(buffer));
+        return TRUE;
+    }
 
     gunichar c = gdk_keyval_to_unicode(event->keyval);
     return c != 0 && handle_char(lang, buffer, c);
@@ -238,4 +348,41 @@ photon_editing_toggle_comment(PhotonDocument *doc) {
     }
     gtk_text_buffer_end_user_action(buffer);
     g_free(prefix);
+}
+
+// ---------------------------------------------------------------------
+// Line commands
+// ---------------------------------------------------------------------
+void
+photon_editing_duplicate_lines(PhotonDocument *doc) {
+    GtkTextBuffer *buffer = GTK_TEXT_BUFFER(photon_document_get_buffer(doc));
+    GtkTextIter start, end, cursor;
+    gint first, last;
+    selected_lines(buffer, &first, &last);
+
+    gtk_text_buffer_get_iter_at_line(buffer, &start, first);
+    gtk_text_buffer_get_iter_at_line(buffer, &end, last);
+    if (!gtk_text_iter_ends_line(&end)) gtk_text_iter_forward_to_line_end(&end);
+    gchar *block = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+    gchar *copy = g_strconcat("\n", block, NULL);
+
+    // Remember where the cursor is in the block, to put it in the copy
+    gtk_text_buffer_get_iter_at_mark(buffer, &cursor, gtk_text_buffer_get_insert(buffer));
+    gint line = gtk_text_iter_get_line(&cursor) + (last - first + 1);
+    gint column = gtk_text_iter_get_line_offset(&cursor);
+
+    gtk_text_buffer_begin_user_action(buffer);
+    gtk_text_buffer_insert(buffer, &end, copy, -1);
+    gtk_text_buffer_get_iter_at_line_offset(buffer, &cursor, line, column);
+    gtk_text_buffer_place_cursor(buffer, &cursor);
+    gtk_text_buffer_end_user_action(buffer);
+
+    g_free(copy);
+    g_free(block);
+}
+
+void
+photon_editing_move_lines(PhotonDocument *doc, gboolean down) {
+    // GtkSourceView already knows how, keeping the selection and undo
+    g_signal_emit_by_name(photon_document_get_view(doc), "move-lines", down);
 }

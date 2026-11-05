@@ -21,4 +21,12 @@ void            photon_settings_free(PhotonSettings *settings);
 gchar *photon_settings_get_string(PhotonSettings *settings, const gchar *group, const gchar *key);
 void   photon_settings_set_string(PhotonSettings *settings, const gchar *group, const gchar *key, const gchar *value);
 
+// NULL-terminated list (free with g_strfreev), or NULL if not set.
+gchar **photon_settings_get_strv(PhotonSettings *settings, const gchar *group, const gchar *key);
+void    photon_settings_set_strv(PhotonSettings *settings, const gchar *group, const gchar *key, const gchar *const *value);
+
+// `fallback` if not set.
+gint photon_settings_get_int(PhotonSettings *settings, const gchar *group, const gchar *key, gint fallback);
+void photon_settings_set_int(PhotonSettings *settings, const gchar *group, const gchar *key, gint value);
+
 #endif

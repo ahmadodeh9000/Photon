@@ -16,6 +16,7 @@ enum {
 };
 
 struct PhotonSidebar {
+    gchar                *root_dir;
     GtkWidget            *root;    // scrolled window
     GtkWidget            *view;
     GtkTreeStore         *store;
@@ -139,6 +140,7 @@ on_row_activated(GtkTreeView *tv, GtkTreePath *tree_path,
 PhotonSidebar *
 photon_sidebar_new(const gchar *root_dir, PhotonSidebarOpenFunc on_open, gpointer user_data) {
     PhotonSidebar *sidebar = g_new0(PhotonSidebar, 1);
+    sidebar->root_dir = g_strdup(root_dir);
     sidebar->on_open = on_open;
     sidebar->user_data = user_data;
 
@@ -173,6 +175,7 @@ photon_sidebar_free(PhotonSidebar *sidebar) {
     if (sidebar == NULL) return;
     g_object_unref(sidebar->root);
     g_object_unref(sidebar->store);
+    g_free(sidebar->root_dir);
     g_free(sidebar);
 }
 
@@ -184,4 +187,57 @@ photon_sidebar_get_widget(PhotonSidebar *sidebar) {
 void
 photon_sidebar_toggle(PhotonSidebar *sidebar) {
     gtk_widget_set_visible(sidebar->root, !gtk_widget_get_visible(sidebar->root));
+}
+
+// ---------------------------------------------------------------------
+// Refresh
+// ---------------------------------------------------------------------
+static void
+remember_expanded(GtkTreeView *view, GtkTreePath *tree_path, gpointer user_data) {
+    GPtrArray *paths = user_data;
+    GtkTreeModel *model = gtk_tree_view_get_model(view);
+    GtkTreeIter iter;
+    gchar *path;
+    if (!gtk_tree_model_get_iter(model, &iter, tree_path)) return;
+    gtk_tree_model_get(model, &iter, COL_PATH, &path, -1);
+    g_ptr_array_add(paths, path);
+}
+
+// Row whose COL_PATH is `path`, searching only rows already listed
+static gboolean
+find_row(GtkTreeModel *model, GtkTreeIter *parent, const gchar *path, GtkTreeIter *found) {
+    GtkTreeIter iter;
+    if (!gtk_tree_model_iter_children(model, &iter, parent)) return FALSE;
+    do {
+        gchar *row_path;
+        gtk_tree_model_get(model, &iter, COL_PATH, &row_path, -1);
+        gboolean match = g_strcmp0(row_path, path) == 0;
+        gboolean inside = !match && *row_path != '\0' && g_str_has_prefix(path, row_path);
+        g_free(row_path);
+        if (match) {
+            *found = iter;
+            return TRUE;
+        }
+        if (inside && find_row(model, &iter, path, found)) return TRUE;
+    } while (gtk_tree_model_iter_next(model, &iter));
+    return FALSE;
+}
+
+void
+photon_sidebar_refresh(PhotonSidebar *sidebar) {
+    GtkTreeView *view = GTK_TREE_VIEW(sidebar->view);
+    GPtrArray *expanded = g_ptr_array_new_with_free_func(g_free);
+    gtk_tree_view_map_expanded_rows(view, remember_expanded, expanded);   // parents come first
+
+    gtk_tree_store_clear(sidebar->store);
+    populate_dir(sidebar->store, NULL, sidebar->root_dir);
+
+    for (guint i = 0; i < expanded->len; i++) {
+        GtkTreeIter iter;
+        if (!find_row(GTK_TREE_MODEL(sidebar->store), NULL, g_ptr_array_index(expanded, i), &iter)) continue;
+        GtkTreePath *tree_path = gtk_tree_model_get_path(GTK_TREE_MODEL(sidebar->store), &iter);
+        gtk_tree_view_expand_row(view, tree_path, FALSE);   // reads the folder via on_row_expanded
+        gtk_tree_path_free(tree_path);
+    }
+    g_ptr_array_free(expanded, TRUE);
 }

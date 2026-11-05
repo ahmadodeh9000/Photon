@@ -4,11 +4,17 @@
  *
 **/
 /*
- * theme: CSS for the chrome + the code style scheme. See theme.h.
+ * theme: CSS for the chrome, the code style scheme, font zoom. See theme.h.
  */
 #include "theme.h"
 
 #define PHOTON_SCHEME_ID "vscode-dark"
+
+struct PhotonTheme {
+    GtkCssProvider *chrome;     // THEME_CSS
+    GtkCssProvider *font_size;  // "textview { font-size: Npt }", above chrome
+    gint            points;
+};
 
 // Dark chrome so the menu bar / sidebar / dialogs match the editor
 static const gchar *THEME_CSS =
@@ -44,7 +50,6 @@ static const gchar *THEME_CSS =
     "  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code',"
     "               'Source Code Pro', Menlo, 'DejaVu Sans Mono',"
     "               'Liberation Mono', monospace;"
-    "  font-size: 11pt;"
     "}";
 
 static void
@@ -62,42 +67,67 @@ add_search_paths(const gchar *data_dir) {
     g_free(icons);
 }
 
-static void
-apply_css(void) {
+static GtkCssProvider *
+add_provider(guint priority) {
+    GtkCssProvider *provider = gtk_css_provider_new();
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), priority);
+    return provider;
+}
+
+PhotonTheme *
+photon_theme_new(const gchar *data_dir) {
+    PhotonTheme *theme = g_new0(PhotonTheme, 1);
+    add_search_paths(data_dir);
     g_object_set(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", TRUE, NULL);
 
-    GtkCssProvider *provider = gtk_css_provider_new();
     GError *error = NULL;
-
-    if (!gtk_css_provider_load_from_data(provider, THEME_CSS, -1, &error)) {
+    theme->chrome = add_provider(GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    if (!gtk_css_provider_load_from_data(theme->chrome, THEME_CSS, -1, &error)) {
         g_printerr("Theme CSS failed to load: %s\n", error->message);
         g_error_free(error);
-    } else {
-        gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
-            GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
-    g_object_unref(provider);
+
+    theme->font_size = add_provider(GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    photon_theme_set_font_size(theme, PHOTON_FONT_SIZE_DEFAULT);
+    return theme;
 }
 
 void
-photon_theme_init(const gchar *data_dir) {
-    add_search_paths(data_dir);
-    apply_css();
+photon_theme_free(PhotonTheme *theme) {
+    if (theme == NULL) return;
+    GdkScreen *screen = gdk_screen_get_default();
+    gtk_style_context_remove_provider_for_screen(screen, GTK_STYLE_PROVIDER(theme->chrome));
+    gtk_style_context_remove_provider_for_screen(screen, GTK_STYLE_PROVIDER(theme->font_size));
+    g_object_unref(theme->chrome);
+    g_object_unref(theme->font_size);
+    g_free(theme);
 }
 
 GtkSourceStyleScheme *
-photon_theme_get_scheme(void) {
+photon_theme_get_scheme(PhotonTheme *theme G_GNUC_UNUSED) {
     return gtk_source_style_scheme_manager_get_scheme(
         gtk_source_style_scheme_manager_get_default(), PHOTON_SCHEME_ID);
 }
 
 void
-photon_theme_style_buffer(GtkSourceBuffer *buffer) {
-    GtkSourceStyleScheme *scheme = photon_theme_get_scheme();
+photon_theme_style_buffer(PhotonTheme *theme, GtkSourceBuffer *buffer) {
+    GtkSourceStyleScheme *scheme = photon_theme_get_scheme(theme);
     if (scheme == NULL) {
-        g_printerr("Style scheme '%s' not found (is the styles/ folder next to Photon?).\n",
-                   PHOTON_SCHEME_ID);
+        g_printerr("Style scheme '%s' not found (is the styles/ folder next to Photon?).\n", PHOTON_SCHEME_ID);
         return;
     }
     gtk_source_buffer_set_style_scheme(buffer, scheme);
+}
+
+void
+photon_theme_set_font_size(PhotonTheme *theme, gint points) {
+    theme->points = CLAMP(points, PHOTON_FONT_SIZE_MIN, PHOTON_FONT_SIZE_MAX);
+    gchar *css = g_strdup_printf("textview { font-size: %dpt; }", theme->points);
+    gtk_css_provider_load_from_data(theme->font_size, css, -1, NULL);
+    g_free(css);
+}
+
+gint
+photon_theme_get_font_size(PhotonTheme *theme) {
+    return theme->points;
 }

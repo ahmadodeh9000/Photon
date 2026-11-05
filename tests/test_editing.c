@@ -131,6 +131,46 @@ test_pairs(void) {
 }
 
 static void
+test_enter_and_dedent(void) {
+    PhotonDocument *doc = new_doc("/nowhere/x.lunar");
+
+    set_text(doc, "fn f() {}", 8);                  // Enter between {} opens a block
+    CHECK(press(doc, GDK_KEY_Return));
+    CHECK_TEXT(doc, "fn f() {\n    \n}", 13);
+
+    set_text(doc, "    if (x) {", 12);               // Enter after { indents one more level
+    CHECK(press(doc, GDK_KEY_Return));
+    CHECK_TEXT(doc, "    if (x) {\n        ", 21);
+
+    set_text(doc, "let a = 1;", 10);                 // plain Enter: GtkSourceView's auto-indent
+    CHECK(!press(doc, GDK_KEY_Return));
+
+    set_text(doc, "    if (x) {\n        ", 21);     // "}" on a blank line dedents
+    CHECK(!press(doc, GDK_KEY_braceright));          // ...then GTK types the "}"
+    CHECK_TEXT(doc, "    if (x) {\n    ", 17);
+
+    photon_document_set_path(doc, "/nowhere/x.py");  // Python: Enter after ":"
+    set_text(doc, "def f():", 8);
+    CHECK(press(doc, GDK_KEY_Return));
+    CHECK_TEXT(doc, "def f():\n    ", 13);
+
+    photon_document_free(doc);
+}
+
+static void
+test_duplicate(void) {
+    PhotonDocument *doc = new_doc("/nowhere/x.c");
+    set_text(doc, "a();\nb();", 2);
+    photon_editing_duplicate_lines(doc);
+    CHECK_TEXT(doc, "a();\na();\nb();", 7);        // cursor moves to the copy
+
+    set_text(doc, "x\ny", 3);                         // last line, no trailing newline
+    photon_editing_duplicate_lines(doc);
+    CHECK_TEXT(doc, "x\ny\ny", 5);
+    photon_document_free(doc);
+}
+
+static void
 select_all(PhotonDocument *doc) {
     GtkTextIter start, end;
     gtk_text_buffer_get_bounds(buffer_of(doc), &start, &end);
@@ -216,11 +256,14 @@ int
 main(int argc, char *argv[]) {
     gtk_init(&argc, &argv);
     photon_languages_init(".");    // run from the repo root
-    photon_theme_init(".");
+    PhotonTheme *theme = photon_theme_new(".");
 
     test_registry();
     test_pairs();
     test_comments();
+    test_enter_and_dedent();
+    test_duplicate();
     test_markers();
+    photon_theme_free(theme);
     return check_finish("test_editing");
 }

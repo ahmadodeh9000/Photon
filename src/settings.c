@@ -62,3 +62,31 @@ photon_settings_set_string(PhotonSettings *settings, const gchar *group, const g
     g_key_file_set_string(settings->keys, group, key, value);
     save(settings);
 }
+
+gchar **
+photon_settings_get_strv(PhotonSettings *settings, const gchar *group, const gchar *key) {
+    return g_key_file_get_string_list(settings->keys, group, key, NULL, NULL);
+}
+
+void
+photon_settings_set_strv(PhotonSettings *settings, const gchar *group, const gchar *key, const gchar *const *value) {
+    g_key_file_set_string_list(settings->keys, group, key, value, value != NULL ? g_strv_length((gchar **)value) : 0);
+    save(settings);
+}
+
+gint
+photon_settings_get_int(PhotonSettings *settings, const gchar *group, const gchar *key, gint fallback) {
+    GError *error = NULL;
+    gint value = g_key_file_get_integer(settings->keys, group, key, &error);
+    if (error != NULL) {
+        g_error_free(error);
+        return fallback;
+    }
+    return value;
+}
+
+void
+photon_settings_set_int(PhotonSettings *settings, const gchar *group, const gchar *key, gint value) {
+    g_key_file_set_integer(settings->keys, group, key, value);
+    save(settings);
+}

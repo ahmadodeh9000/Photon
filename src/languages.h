@@ -30,6 +30,8 @@ typedef struct PhotonLanguage {
     const gchar      *comment;      // line comment marker
     guint             indent;       // spaces per indent level
     const gchar      *pairs;        // auto-close pairs, 2 chars each: "()[]"
+    const gchar      *indent_after; // Enter after one of these indents one level
+    const gchar *const *keywords;   // completion words (keywords + built-ins), NULL-terminated
     PhotonErrorParser error_parser; // NULL = no error markers
 } PhotonLanguage;
 

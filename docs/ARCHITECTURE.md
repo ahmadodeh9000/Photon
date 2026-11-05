@@ -8,21 +8,28 @@ it as `user_data`.
 ```
 src/main.c         startup: arguments (--version, --run, --smoke-test,
                    --screenshot), finds the data folder, calls photon_app_new()
-src/app.c/.h       main window: layout, menus + shortcuts, title, file dialogs,
-                   save, showing run errors
+src/app.c/.h       main window: layout, documents (new/open/save/close/quit +
+                   "unsaved changes?"), session, zoom, showing run errors
+src/menus.c/.h     the menu bar and EVERY shortcut (one line per item)
+src/tabs.c/.h      notebook of open documents: labels, "*" dirty mark, close
+                   buttons, find-by-path
 src/document.c/.h  one open file: buffer + view + path + language + dirty
-                   state + error markers (underline, gutter dot, tooltip)
+                   state + error markers; editor defaults (auto-indent, ...)
 src/editing.c/.h   typing behaviors from the language: auto-close pairs,
-                   comment toggle
-src/sidebar.c/.h   file tree on the left (lazy: folders are read on expand)
+                   smart Enter, dedent on "}", comments, duplicate/move lines
+src/search.c/.h    find/replace bar (GtkSourceSearchContext) + go to line
+src/completion.c/.h autocomplete: buffer words + the language's keywords
+src/sidebar.c/.h   file tree on the left (lazy; refreshes after saves)
 src/panel.c/.h     bottom notebook; owns the "Terminal" tab (user's shell)
 src/runner.c/.h    Run / Stop: builds the command, runs it in the "Run" tab,
                    tees stderr, exit code + time, finds lunar/python3/cc
 src/errors.c/.h    stderr parsers (Lunar, gcc/clang, Python) -> PhotonError list
 src/languages.c/.h the language registry (one entry per language)
-src/statusbar.c/.h message (errors in red) + run status at the bottom
-src/settings.c/.h  settings.ini (GKeyFile) in g_get_user_config_dir()/photon
-src/theme.c/.h     GTK CSS for the chrome + the code style scheme
+src/statusbar.c/.h message, Ln/Col, language picker, run status
+src/settings.c/.h  settings.ini (GKeyFile) in g_get_user_config_dir()/photon:
+                   [tools] lunar=, [session] files= current=, [editor] font_size=
+src/theme.c/.h     PhotonTheme: GTK CSS for the chrome, the code style scheme,
+                   font zoom
 src/platform.c/.h  ALL OS-specific code (#ifdef __APPLE__ / __linux__)
 
 lang/             GtkSourceView language specs (lunar.lang)
@@ -30,20 +37,29 @@ styles/           GtkSourceView style schemes (vscode-dark.xml)
 icons/            app icon (1024 px + a 256 px copy for Linux icon themes)
 data/             photon.desktop (Linux only)
 tests/samples/    small Lunar / C / Python files for manual and CI checks
-tests/test_*.c    unit tests (`make test`): parsers, editing, markers, registry
+tests/test_*.c    unit tests (`make test`): parsers, editing, markers, registry,
+                  tabs + session + sidebar through a real PhotonApp
 ```
 
 How it fits together:
 
 ```
-main ──> platform_init() + platform_data_dir() ──> languages_init() + theme_init()
-     └─> app_new()
+main ──> platform_init() + platform_data_dir() ──> languages_init() + theme_new()
+     └─> app_new(options)
            ├─ settings_load()
-           ├─ statusbar_new()  bottom strip
-           ├─ document_new()   editor (center), attaches editing.c
-           ├─ panel_new()      bottom notebook: Terminal tab (hidden at start)
-           ├─ runner_new()     adds the Run tab to the panel
-           └─ sidebar_new()    file tree (left), calls back app_open_file()
+           ├─ statusbar_new()   bottom strip; language picker calls back
+           ├─ completion_new()  shared "Words" provider + one per language
+           ├─ tabs_new()        documents; tells the app about switches/closes
+           ├─ search_new()      find bar, searches app_current_doc()
+           ├─ panel_new()       bottom notebook: Terminal tab (hidden at start)
+           ├─ runner_new()      adds the Run tab to the panel
+           ├─ sidebar_new()     file tree (left), calls back app_open_file()
+           ├─ menus_build()     menu bar + shortcuts
+           └─ restore session, open the file from the command line
+
+A new document goes through app.c add_document(): theme_style_buffer(),
+completion_attach(), cursor -> status bar, tabs_add(). editing.c is
+attached by document_new() itself.
 ```
 
 A run, start to finish:
@@ -79,8 +95,10 @@ next to an installed binary, and finally the compiled-in `PHOTON_DATADIR`.
 
 ### Rules
 
-- Shortcuts are always written with `<Primary>` (Cmd on macOS, Ctrl on Linux).
-  Avoid Cmd+H / Cmd+M (macOS) and Ctrl+Alt+arrows (Linux).
+- Shortcuts are always written with `<Primary>` (Cmd on macOS, Ctrl on Linux),
+  and all of them live in `menus.c`. Avoid Cmd+H / Cmd+M (macOS) and
+  Ctrl+Alt+arrows (Linux). On Linux a focused terminal gets Ctrl+keys first
+  (see `on_window_key_press()` in app.c), so Ctrl+C still interrupts.
 - `#ifdef __APPLE__` / `__linux__` only in `platform.c`.
 - Paths are built with `g_build_filename()`; temp/config dirs come from
   `g_get_tmp_dir()` / `g_get_user_config_dir()`; programs are found with
@@ -99,13 +117,13 @@ next to an installed binary, and finally the compiled-in `PHOTON_DATADIR`.
    `src/thing.c` + `src/thing.h` with the header comment, an opaque
    `PhotonThing`, and `photon_thing_new/free/get_widget`.
 2. If the window needs to hold it, add a field to `PhotonApp` in `app.h`,
-   create it in `photon_app_new()` and free it in `photon_app_free()`.
+   create it in `create_modules()` (app.c) and free it in `photon_app_free()`.
 3. The Makefile compiles every `src/*.c`, so there is nothing to register.
 4. `make WERROR=1 && make check`.
 
 ## How to add a menu item + shortcut
 
-In `app.c`, write a callback:
+In `menus.c`, write a callback:
 
 ```c
 static void

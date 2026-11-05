@@ -8,7 +8,6 @@
  */
 #include "document.h"
 #include "editing.h"
-#include "theme.h"
 
 #define MARK_ERROR    "photon-error"
 #define MARK_WARNING  "photon-warning"
@@ -23,7 +22,20 @@ struct PhotonDocument {
     gchar                *path;        // NULL until loaded or saved
     const PhotonLanguage *language;    // registry entry, NULL if unknown
     gboolean              has_errors;  // markers are showing
+
+    PhotonDocumentListener listener;
+    gpointer               listener_data;
 };
+
+static void
+notify(PhotonDocument *doc, PhotonDocChange what) {
+    if (doc->listener != NULL) doc->listener(doc, what, doc->listener_data);
+}
+
+static void
+on_modified_changed(GtkTextBuffer *buffer G_GNUC_UNUSED, gpointer user_data) {
+    notify(user_data, PHOTON_DOC_DIRTY);
+}
 
 // ---------------------------------------------------------------------
 // Error marker look: a filled circle in the gutter, tinted line, squiggle
@@ -96,11 +108,18 @@ photon_document_new(void) {
     PhotonDocument *doc = g_new0(PhotonDocument, 1);
 
     // No language yet: it's picked per file in set_path()
-    doc->buffer = gtk_source_buffer_new(NULL);
-    photon_theme_style_buffer(doc->buffer);
+    doc->buffer = gtk_source_buffer_new(NULL);   // the app styles it (theme.c)
 
     doc->view = gtk_source_view_new_with_buffer(doc->buffer);
-    gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(doc->view), TRUE);
+    GtkSourceView *view = GTK_SOURCE_VIEW(doc->view);
+    gtk_source_view_set_show_line_numbers(view, TRUE);
+    gtk_source_view_set_auto_indent(view, TRUE);
+    gtk_source_view_set_highlight_current_line(view, TRUE);
+    gtk_source_view_set_smart_home_end(view, GTK_SOURCE_SMART_HOME_END_BEFORE);
+    gtk_source_view_set_insert_spaces_instead_of_tabs(view, TRUE);   // Tab inserts spaces
+    gtk_source_view_set_indent_width(view, 4);
+    gtk_source_view_set_tab_width(view, 4);
+    gtk_source_buffer_set_highlight_matching_brackets(doc->buffer, TRUE);
 
     doc->scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(doc->scroll),
@@ -110,6 +129,7 @@ photon_document_new(void) {
 
     setup_markers(doc);
     g_signal_connect(doc->buffer, "changed", G_CALLBACK(on_buffer_changed), doc);
+    g_signal_connect(doc->buffer, "modified-changed", G_CALLBACK(on_modified_changed), doc);
     photon_editing_attach(doc);
     return doc;
 }
@@ -117,6 +137,7 @@ photon_document_new(void) {
 void
 photon_document_free(PhotonDocument *doc) {
     if (doc == NULL) return;
+    doc->listener = NULL;
     g_signal_handlers_disconnect_by_data(doc->buffer, doc);
     g_signal_handlers_disconnect_by_data(doc->view, doc);
     g_object_unref(doc->scroll);
@@ -125,28 +146,59 @@ photon_document_free(PhotonDocument *doc) {
     g_free(doc);
 }
 
-// Indent settings come from the registry; unknown files keep GTK's defaults
+// Highlighting + indent from a registry entry (NULL = plain text, 4 spaces)
 static void
-apply_language(PhotonDocument *doc) {
+use_language(PhotonDocument *doc, const PhotonLanguage *language, GtkSourceLanguage *highlighting) {
     GtkSourceView *view = GTK_SOURCE_VIEW(doc->view);
+    guint indent = language != NULL ? language->indent : 4;
+    gboolean changed = language != doc->language;
 
-    doc->language = photon_languages_for_file(doc->path);
-    gtk_source_buffer_set_language(doc->buffer, photon_languages_highlighting_for_file(doc->path));
+    doc->language = language;
+    gtk_source_buffer_set_language(doc->buffer, highlighting);
+    gtk_source_view_set_tab_width(view, indent);
+    gtk_source_view_set_indent_width(view, (gint)indent);
+    if (changed) notify(doc, PHOTON_DOC_LANGUAGE);
+}
 
-    if (doc->language != NULL) {
-        gtk_source_view_set_tab_width(view, doc->language->indent);
-        gtk_source_view_set_indent_width(view, (gint)doc->language->indent);
-        gtk_source_view_set_insert_spaces_instead_of_tabs(view, TRUE);
-    }
+void
+photon_document_set_language(PhotonDocument *doc, const PhotonLanguage *language) {
+    use_language(doc, language, language != NULL ? photon_languages_get(language->gsv_lang) : NULL);
 }
 
 void
 photon_document_set_path(PhotonDocument *doc, const gchar *path) {
     // Duplicate BEFORE freeing: `path` may be doc->path itself
     gchar *copy = g_strdup(path);
+    gboolean renamed = g_strcmp0(copy, doc->path) != 0;
     g_free(doc->path);
     doc->path = copy;
-    apply_language(doc);  // "Save As x.lunar" switches highlighting
+
+    // "Save As x.lunar" switches highlighting. A name with no known
+    // extension keeps the language the file already had.
+    const PhotonLanguage *language = photon_languages_for_file(doc->path);
+    GtkSourceLanguage *highlighting = photon_languages_highlighting_for_file(doc->path);
+    if (language != NULL || highlighting != NULL) use_language(doc, language, highlighting);
+
+    if (renamed) notify(doc, PHOTON_DOC_PATH);
+}
+
+void
+photon_document_set_listener(PhotonDocument *doc, PhotonDocumentListener listener, gpointer user_data) {
+    doc->listener = listener;
+    doc->listener_data = user_data;
+}
+
+gchar *
+photon_document_get_title(PhotonDocument *doc) {
+    if (doc->path != NULL) return g_path_get_basename(doc->path);
+    if (doc->language != NULL) return g_strconcat("Untitled", doc->language->exts[0], NULL);
+    return g_strdup("Untitled");
+}
+
+gboolean
+photon_document_is_blank(PhotonDocument *doc) {
+    return doc->path == NULL && !photon_document_is_dirty(doc)
+        && gtk_text_buffer_get_char_count(GTK_TEXT_BUFFER(doc->buffer)) == 0;
 }
 
 // ---------------------------------------------------------------------

@@ -4,51 +4,80 @@
  *
 **/
 /*
- * app: the main window. Owns the layout (sidebar | editor over panel), the
- * menus and keyboard shortcuts, and the window title. Every callback gets
- * the PhotonApp* instead of reaching for globals.
+ * app: the main window. Owns the layout (sidebar | search bar / tabs over
+ * panel | status bar), the open documents' lifecycle (new, open, save,
+ * close, quit, with "unsaved changes?" questions), the session (files to
+ * reopen) and the zoom level. Every callback gets the PhotonApp* instead
+ * of reaching for globals. Menus and shortcuts live in menus.c.
  */
 #ifndef PHOTON_APP_H
 #define PHOTON_APP_H
 
 #include <gtk/gtk.h>
 
+#include "completion.h"
 #include "document.h"
 #include "panel.h"
 #include "runner.h"
+#include "search.h"
 #include "settings.h"
 #include "sidebar.h"
 #include "statusbar.h"
+#include "tabs.h"
+#include "theme.h"
 
 struct PhotonApp {
-    GtkWidget       *window;
-    PhotonSettings  *settings;
-    PhotonSidebar   *sidebar;
-    PhotonPanel     *panel;
-    PhotonStatusbar *statusbar;
-    PhotonRunner    *runner;
-    PhotonDocument  *doc;           // the one open file
-    guint            autosave_id;   // 0 while auto save is off
+    GtkWidget        *window;
+    PhotonSettings   *settings;
+    PhotonTheme      *theme;        // owned by main()
+    PhotonSidebar    *sidebar;
+    PhotonTabs       *tabs;
+    PhotonSearch     *search;
+    PhotonCompletion *completion;
+    PhotonPanel      *panel;
+    PhotonStatusbar  *statusbar;
+    PhotonRunner     *runner;
+    gchar            *root_dir;     // sidebar root; default folder for Save As
+    gboolean          use_session;  // read/write the list of open files
+    gboolean          restoring;    // reopening the session: don't save it meanwhile
+    gboolean          quitting;     // don't replace the last closed tab
+    guint             autosave_id;  // 0 while auto save is off
 };
 
 typedef struct PhotonAppOptions {
     const gchar *root_dir;      // sidebar root and terminal cwd (required)
     const gchar *file;          // file to open, may not exist yet; NULL = none
     gboolean     show_sidebar;  // TRUE when Photon was started on a folder
+    PhotonTheme *theme;         // required, outlives the app
+    gboolean     use_session;   // reopen last files / remember open files
 } PhotonAppOptions;
 
 PhotonApp *photon_app_new(const PhotonAppOptions *options);
 void       photon_app_free(PhotonApp *app);
 
-// Open `path` in the editor. Returns FALSE (and says why) if it can't.
-gboolean photon_app_open_file(PhotonApp *app, const gchar *path);
+PhotonDocument *photon_app_current_doc(PhotonApp *app);   // never NULL
 
-// Save the current document, asking for a name if it has none.
-// Returns FALSE if cancelled or the write failed.
-gboolean photon_app_save(PhotonApp *app);
+// Documents
+PhotonDocument *photon_app_new_document(PhotonApp *app, const PhotonLanguage *language);
+void            photon_app_new_file_dialog(PhotonApp *app);  // asks the language, Lunar first
+gboolean        photon_app_open_file(PhotonApp *app, const gchar *path);  // switches if already open
+void            photon_app_open_dialog(PhotonApp *app);
+gboolean        photon_app_save(PhotonApp *app, PhotonDocument *doc);     // asks a name if untitled
+gboolean        photon_app_save_as(PhotonApp *app, PhotonDocument *doc);
+gboolean        photon_app_close_document(PhotonApp *app, PhotonDocument *doc);  // FALSE = cancelled
 
-// Show run errors: open the file of the first error if needed, mark the
-// lines, jump to it and put its message in the status bar.
+// Asks about unsaved files, remembers the session, then quits.
+// Returns FALSE if the user cancelled.
+gboolean photon_app_quit(PhotonApp *app);
+
+void photon_app_set_autosave(PhotonApp *app, gboolean on);
+
+// Zoom the code font by `steps` points; 0 resets it.
+void photon_app_zoom(PhotonApp *app, gint steps);
+
+// Run errors: open the file of the first error if needed, mark the lines
+// in every open document, jump to it and show its message.
 void photon_app_show_errors(PhotonApp *app, GPtrArray *errors);
+void photon_app_clear_errors(PhotonApp *app);
 
 #endif

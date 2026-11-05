@@ -15,7 +15,11 @@ photon ~/some/project  # open a directory
 
 ## Features
 
+- Tabs (with a `*` on unsaved files); the files you had open come back next time
 - Syntax highlighting for Lunar, C and Python, switched automatically by file extension
+- Find / replace, go to line, autocomplete (words in open files + each
+  language's keywords and built-ins), zoom
+- Auto-indent, smart Enter inside `{}`, duplicate line, move lines
 - Run the current file (Cmd/Ctrl+R or F5) in an interactive Run tab, stop it
   with Cmd/Ctrl+. ; errors from Lunar, gcc/clang and Python are underlined,
   marked in the gutter and jumped to

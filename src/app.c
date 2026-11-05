@@ -4,32 +4,65 @@
  *
 **/
 /*
- * app: main window, layout, menus and shortcuts. See app.h.
+ * app: main window, documents, session. See app.h.
  */
 #include "app.h"
-#include "editing.h"
+#include "menus.h"
+#include "platform.h"
+
+#include <vte/vte.h>
 
 #define AUTOSAVE_SECONDS 30
+#define SESSION_GROUP    "session"
+#define EDITOR_GROUP     "editor"
+
+enum { ANSWER_SAVE = 1, ANSWER_DISCARD = 2 };   // GTK_RESPONSE_* are negative
 
 // ---------------------------------------------------------------------
-// Title + file actions
+// Title + status bar
 // ---------------------------------------------------------------------
+// Takes the document because during a tab switch the notebook may not
+// report the new current page yet
 static void
-update_title(PhotonApp *app) {
-    const gchar *path = photon_document_get_path(app->doc);
-    if (path == NULL) {
-        gtk_window_set_title(GTK_WINDOW(app->window), "Photon");
-        return;
-    }
-
-    gchar *basename = g_path_get_basename(path);
-    gchar *title = g_strdup_printf("%s - Photon", basename);
+update_title(PhotonApp *app, PhotonDocument *doc) {
+    gchar *name = photon_document_get_title(doc);
+    gchar *title = g_strdup_printf("%s - Photon", name);
     gtk_window_set_title(GTK_WINDOW(app->window), title);
-    g_free(basename);
     g_free(title);
+    g_free(name);
 }
 
-// Errors go to the status bar and stderr
+static void
+update_position(PhotonApp *app, PhotonDocument *doc) {
+    GtkTextBuffer *buffer = GTK_TEXT_BUFFER(photon_document_get_buffer(doc));
+    GtkTextIter iter;
+    gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
+    photon_statusbar_set_position(app->statusbar, gtk_text_iter_get_line(&iter) + 1,
+                                  gtk_text_iter_get_line_offset(&iter) + 1);
+}
+
+static void
+update_status(PhotonApp *app, PhotonDocument *doc) {
+    const PhotonLanguage *language = photon_document_get_language(doc);
+    photon_statusbar_set_language(app->statusbar, language != NULL ? language->name : "Plain Text");
+    update_position(app, doc);
+}
+
+static void
+update_window(PhotonApp *app, PhotonDocument *doc) {
+    if (doc == NULL) return;
+    update_title(app, doc);
+    update_status(app, doc);
+}
+
+// Any buffer's cursor moved; only the current one is shown
+static void
+on_cursor_moved(GObject *buffer, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data) {
+    PhotonApp *app = user_data;
+    PhotonDocument *doc = photon_tabs_current(app->tabs);
+    if (doc != NULL && G_OBJECT(photon_document_get_buffer(doc)) == buffer) update_position(app, doc);
+}
+
 static void
 report(PhotonApp *app, const gchar *what, GError *error) {
     gchar *msg = g_strdup_printf("%s: %s", what, error->message);
@@ -39,126 +72,310 @@ report(PhotonApp *app, const gchar *what, GError *error) {
     g_error_free(error);
 }
 
+// ---------------------------------------------------------------------
+// Session: the open files, reopened on the next launch
+// ---------------------------------------------------------------------
+static void
+save_session(PhotonApp *app) {
+    if (!app->use_session || app->restoring || app->quitting) return;
+
+    GPtrArray *files = g_ptr_array_new();
+    gint current = 0;
+    PhotonDocument *active = photon_app_current_doc(app);
+    GList *docs = photon_tabs_list(app->tabs);
+    for (GList *l = docs; l != NULL; l = l->next) {
+        const gchar *path = photon_document_get_path(l->data);
+        if (path == NULL) continue;
+        if (l->data == active) current = (gint)files->len;
+        g_ptr_array_add(files, (gpointer)path);
+    }
+    g_ptr_array_add(files, NULL);
+
+    photon_settings_set_strv(app->settings, SESSION_GROUP, "files", (const gchar *const *)files->pdata);
+    photon_settings_set_int(app->settings, SESSION_GROUP, "current", current);
+    g_list_free(docs);
+    g_ptr_array_free(files, TRUE);
+}
+
+static void
+restore_session(PhotonApp *app) {
+    gchar **files = photon_settings_get_strv(app->settings, SESSION_GROUP, "files");
+    if (files == NULL) return;
+
+    PhotonDocument *select = NULL;
+    gint current = photon_settings_get_int(app->settings, SESSION_GROUP, "current", 0);
+    app->restoring = TRUE;
+    for (gint i = 0; files[i] != NULL; i++) {
+        if (!g_file_test(files[i], G_FILE_TEST_IS_REGULAR)) continue;   // deleted since
+        if (photon_app_open_file(app, files[i]) && i == current) select = photon_app_current_doc(app);
+    }
+    if (select != NULL) photon_tabs_select(app->tabs, select);
+    app->restoring = FALSE;
+    g_strfreev(files);
+}
+
+// ---------------------------------------------------------------------
+// Adding and removing documents
+// ---------------------------------------------------------------------
+static void
+add_document(PhotonApp *app, PhotonDocument *doc) {
+    photon_theme_style_buffer(app->theme, photon_document_get_buffer(doc));
+    photon_completion_attach(app->completion, doc);
+    g_signal_connect(photon_document_get_buffer(doc), "notify::cursor-position", G_CALLBACK(on_cursor_moved), app);
+    photon_tabs_add(app->tabs, doc);
+}
+
+static void
+remove_document(PhotonApp *app, PhotonDocument *doc) {
+    g_signal_handlers_disconnect_by_data(photon_document_get_buffer(doc), app);
+    photon_completion_detach(app->completion, doc);
+    photon_tabs_close(app->tabs, doc);
+
+    // Always keep one tab, so "the current document" exists
+    if (!app->quitting && photon_tabs_count(app->tabs) == 0) photon_app_new_document(app, photon_languages_find("lunar"));
+}
+
+PhotonDocument *
+photon_app_current_doc(PhotonApp *app) {
+    return photon_tabs_current(app->tabs);
+}
+
+PhotonDocument *
+photon_app_new_document(PhotonApp *app, const PhotonLanguage *language) {
+    PhotonDocument *doc = photon_document_new();
+    photon_document_set_language(doc, language);
+    add_document(app, doc);
+    gtk_widget_grab_focus(GTK_WIDGET(photon_document_get_view(doc)));
+    return doc;
+}
+
 gboolean
 photon_app_open_file(PhotonApp *app, const gchar *path) {
+    PhotonDocument *open = photon_tabs_find(app->tabs, path);
+    if (open != NULL) {
+        photon_tabs_select(app->tabs, open);
+        return TRUE;
+    }
+
+    // Reuse an empty "Untitled" tab instead of piling up blank ones
+    PhotonDocument *current = photon_tabs_count(app->tabs) > 0 ? photon_app_current_doc(app) : NULL;
+    gboolean reuse = current != NULL && photon_document_is_blank(current);
+    PhotonDocument *doc = reuse ? current : photon_document_new();
+
     GError *error = NULL;
-    if (!photon_document_load(app->doc, path, &error)) {
+    if (!photon_document_load(doc, path, &error)) {
         report(app, "Failed to load file", error);
+        if (!reuse) photon_document_free(doc);
         return FALSE;
     }
-    update_title(app);
+    if (!reuse) add_document(app, doc);
+
+    update_window(app, doc);
     photon_statusbar_set_message(app->statusbar, NULL, FALSE);
+    save_session(app);
     return TRUE;
 }
 
-static gboolean
-save_to(PhotonApp *app, const gchar *path) {
-    GError *error = NULL;
-    if (!photon_document_save_as(app->doc, path, &error)) {
-        report(app, "Failed to save file", error);
-        return FALSE;
-    }
-    update_title(app);
-    return TRUE;
-}
+// ---------------------------------------------------------------------
+// Dialogs
+// ---------------------------------------------------------------------
 
 // Native dialogs: NSOpenPanel/NSSavePanel on macOS, GTK/portal dialogs on Linux
 static gchar *
-choose_file(PhotonApp *app, GtkFileChooserAction action) {
+choose_file(PhotonApp *app, PhotonDocument *doc, GtkFileChooserAction action) {
     gboolean saving = (action == GTK_FILE_CHOOSER_ACTION_SAVE);
     GtkFileChooserNative *native = gtk_file_chooser_native_new(
         saving ? "Save File" : "Open File", GTK_WINDOW(app->window), action,
         saving ? "_Save" : "_Open", "_Cancel");
+    GtkFileChooser *chooser = GTK_FILE_CHOOSER(native);
 
-    const gchar *current = photon_document_get_path(app->doc);
+    const gchar *current = doc != NULL ? photon_document_get_path(doc) : NULL;
     if (saving) {
-        gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(native), TRUE);
-        if (current != NULL) gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(native), current);
+        gtk_file_chooser_set_do_overwrite_confirmation(chooser, TRUE);
+        if (current != NULL) {
+            gtk_file_chooser_set_filename(chooser, current);
+        } else {
+            gchar *name = photon_document_get_title(doc);   // "Untitled.lunar"
+            gtk_file_chooser_set_current_folder(chooser, app->root_dir);
+            gtk_file_chooser_set_current_name(chooser, name);
+            g_free(name);
+        }
     }
 
     gchar *filename = NULL;
     if (gtk_native_dialog_run(GTK_NATIVE_DIALOG(native)) == GTK_RESPONSE_ACCEPT) {
-        filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(native));
+        filename = gtk_file_chooser_get_filename(chooser);
     }
     g_object_unref(native);
     return filename;
 }
 
-static gboolean
-save_as(PhotonApp *app) {
-    gchar *filename = choose_file(app, GTK_FILE_CHOOSER_ACTION_SAVE);
-    gboolean ok = filename != NULL && save_to(app, filename);
-    g_free(filename);
-    return ok;
-}
-
-gboolean
-photon_app_save(PhotonApp *app) {
-    const gchar *path = photon_document_get_path(app->doc);
-    if (path == NULL) return save_as(app);
-    return save_to(app, path);   // safe: the document copies the path before replacing it
-}
-
 void
-photon_app_show_errors(PhotonApp *app, GPtrArray *errors) {
-    const PhotonError *first = photon_errors_first(errors);
-
-    // The error may be in another file (an imported Lunar module, a header)
-    if (first != NULL) {
-        const gchar *path = photon_document_get_path(app->doc);
-        gchar *current = path != NULL ? g_canonicalize_filename(path, NULL) : NULL;
-        if (g_strcmp0(current, first->path) != 0 && g_file_test(first->path, G_FILE_TEST_IS_REGULAR)) {
-            photon_app_open_file(app, first->path);
-        }
-        g_free(current);
-    }
-
-    photon_document_show_errors(app->doc, errors);
-    if (first == NULL) return;   // warnings only: marked, no jump
-
-    gchar *base = g_path_get_basename(first->path);
-    gchar *msg = g_strdup_printf("%s:%d: %s", base, first->line, first->message);
-    photon_statusbar_set_message(app->statusbar, msg, TRUE);
-    photon_document_goto(app->doc, first->line, first->column);
-    g_free(base);
-    g_free(msg);
-}
-
-// ---------------------------------------------------------------------
-// Menu callbacks (user_data is always the PhotonApp*)
-// ---------------------------------------------------------------------
-static void
-on_open(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    PhotonApp *app = user_data;
-    gchar *filename = choose_file(app, GTK_FILE_CHOOSER_ACTION_OPEN);
+photon_app_open_dialog(PhotonApp *app) {
+    gchar *filename = choose_file(app, NULL, GTK_FILE_CHOOSER_ACTION_OPEN);
     if (filename != NULL) photon_app_open_file(app, filename);
     g_free(filename);
 }
 
-static void
-on_save(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    photon_app_save(user_data);
+// "New File" asks which language; Lunar is selected, so Enter takes it
+void
+photon_app_new_file_dialog(PhotonApp *app) {
+    GtkWidget *dialog = gtk_dialog_new_with_buttons("New File", GTK_WINDOW(app->window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Create", GTK_RESPONSE_OK, NULL);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+
+    GtkWidget *combo = gtk_combo_box_text_new();
+    const PhotonLanguage *const *all = photon_languages_all();
+    for (int i = 0; all[i] != NULL; i++) gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(combo), all[i]->id, all[i]->name);
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(combo), "", "Plain Text");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(combo), 0);
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(box), 10);
+    gtk_box_pack_start(GTK_BOX(box), gtk_label_new("Language:"), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), combo, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), box, FALSE, FALSE, 0);
+    gtk_widget_show_all(dialog);
+    gtk_widget_grab_focus(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK));
+
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) {
+        const gchar *id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(combo));
+        photon_app_new_document(app, photon_languages_find(id));
+    }
+    gtk_widget_destroy(dialog);
 }
 
-static void
-on_save_as(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    save_as(user_data);
+// Save / Don't Save / Cancel
+static gint
+ask_unsaved(PhotonApp *app, const gchar *question, const gchar *detail, const gchar *save_label) {
+    GtkWidget *dialog = gtk_message_dialog_new(GTK_WINDOW(app->window), GTK_DIALOG_MODAL,
+        GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "%s", question);
+    gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s", detail);
+    gtk_dialog_add_buttons(GTK_DIALOG(dialog), "Do_n't Save", ANSWER_DISCARD,
+                           "_Cancel", GTK_RESPONSE_CANCEL, save_label, ANSWER_SAVE, NULL);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), ANSWER_SAVE);
+    gint answer = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    return answer;
+}
+
+// ---------------------------------------------------------------------
+// Saving, closing, quitting
+// ---------------------------------------------------------------------
+static gboolean
+save_to(PhotonApp *app, PhotonDocument *doc, const gchar *path) {
+    GError *error = NULL;
+    gboolean is_new = !g_file_test(path, G_FILE_TEST_EXISTS);
+    if (!photon_document_save_as(doc, path, &error)) {
+        report(app, "Failed to save file", error);
+        return FALSE;
+    }
+    if (is_new) photon_sidebar_refresh(app->sidebar);   // show the new file
+    return TRUE;
+}
+
+gboolean
+photon_app_save_as(PhotonApp *app, PhotonDocument *doc) {
+    gchar *filename = choose_file(app, doc, GTK_FILE_CHOOSER_ACTION_SAVE);
+    gboolean ok = filename != NULL && save_to(app, doc, filename);
+    g_free(filename);
+    if (ok) save_session(app);
+    return ok;
+}
+
+gboolean
+photon_app_save(PhotonApp *app, PhotonDocument *doc) {
+    const gchar *path = photon_document_get_path(doc);
+    if (path == NULL) return photon_app_save_as(app, doc);
+    return save_to(app, doc, path);   // safe: the document copies the path before replacing it
+}
+
+gboolean
+photon_app_close_document(PhotonApp *app, PhotonDocument *doc) {
+    if (photon_document_is_dirty(doc)) {
+        photon_tabs_select(app->tabs, doc);
+        gchar *name = photon_document_get_title(doc);
+        gchar *question = g_strdup_printf("Save changes to \"%s\" before closing?", name);
+        gint answer = ask_unsaved(app, question, "Your changes will be lost if you don't save them.", "_Save");
+        g_free(question);
+        g_free(name);
+
+        if (answer == ANSWER_SAVE && !photon_app_save(app, doc)) return FALSE;
+        if (answer != ANSWER_SAVE && answer != ANSWER_DISCARD) return FALSE;   // cancelled
+    }
+    remove_document(app, doc);
+    save_session(app);
+    return TRUE;
+}
+
+static GList *
+dirty_documents(PhotonApp *app) {
+    GList *dirty = NULL;
+    GList *docs = photon_tabs_list(app->tabs);
+    for (GList *l = docs; l != NULL; l = l->next) {
+        if (photon_document_is_dirty(l->data)) dirty = g_list_append(dirty, l->data);
+    }
+    g_list_free(docs);
+    return dirty;
+}
+
+gboolean
+photon_app_quit(PhotonApp *app) {
+    GList *dirty = dirty_documents(app);
+    guint count = g_list_length(dirty);
+    gboolean ok = TRUE;
+
+    if (count > 0) {
+        gchar *question = count == 1
+            ? g_strdup("1 file has unsaved changes. Save it before quitting?")
+            : g_strdup_printf("%u files have unsaved changes. Save them before quitting?", count);
+        gint answer = ask_unsaved(app, question, "Your changes will be lost if you don't save them.",
+                                  count == 1 ? "_Save" : "_Save All");
+        g_free(question);
+
+        if (answer == ANSWER_SAVE) {
+            for (GList *l = dirty; ok && l != NULL; l = l->next) {
+                photon_tabs_select(app->tabs, l->data);
+                ok = photon_app_save(app, l->data);
+            }
+        } else if (answer != ANSWER_DISCARD) {
+            ok = FALSE;
+        }
+    }
+    g_list_free(dirty);
+    if (!ok) return FALSE;
+
+    save_session(app);
+    app->quitting = TRUE;
+    gtk_main_quit();
+    return TRUE;
 }
 
 static gboolean
+on_delete_event(GtkWidget *window G_GNUC_UNUSED, GdkEvent *event G_GNUC_UNUSED, gpointer user_data) {
+    photon_app_quit(user_data);
+    return TRUE;   // the window is destroyed in photon_app_free()
+}
+
+// ---------------------------------------------------------------------
+// Auto save, zoom, errors
+// ---------------------------------------------------------------------
+static gboolean
 autosave_tick(gpointer user_data) {
     PhotonApp *app = user_data;
-    if (photon_document_get_path(app->doc) != NULL && photon_document_is_dirty(app->doc)) {
-        photon_app_save(app);
+    GList *docs = photon_tabs_list(app->tabs);
+    for (GList *l = docs; l != NULL; l = l->next) {
+        if (photon_document_get_path(l->data) != NULL && photon_document_is_dirty(l->data)) {
+            photon_app_save(app, l->data);
+        }
     }
+    g_list_free(docs);
     return G_SOURCE_CONTINUE;
 }
 
-static void
-on_autosave_toggled(GtkCheckMenuItem *item, gpointer user_data) {
-    PhotonApp *app = user_data;
-    gboolean on = gtk_check_menu_item_get_active(item);
-
+void
+photon_app_set_autosave(PhotonApp *app, gboolean on) {
     if (on && app->autosave_id == 0) {
         app->autosave_id = g_timeout_add_seconds(AUTOSAVE_SECONDS, autosave_tick, app);
     } else if (!on && app->autosave_id != 0) {
@@ -167,67 +384,71 @@ on_autosave_toggled(GtkCheckMenuItem *item, gpointer user_data) {
     }
 }
 
-static void
-on_quit(GtkWidget *item G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED) {
-    gtk_main_quit();
+void
+photon_app_zoom(PhotonApp *app, gint steps) {
+    gint size = steps == 0 ? PHOTON_FONT_SIZE_DEFAULT : photon_theme_get_font_size(app->theme) + steps;
+    photon_theme_set_font_size(app->theme, size);
+    photon_settings_set_int(app->settings, EDITOR_GROUP, "font_size", photon_theme_get_font_size(app->theme));
 }
 
-static void
-on_undo(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    GtkSourceBuffer *buffer = photon_document_get_buffer(((PhotonApp *)user_data)->doc);
-    if (gtk_source_buffer_can_undo(buffer)) gtk_source_buffer_undo(buffer);
+void
+photon_app_clear_errors(PhotonApp *app) {
+    GList *docs = photon_tabs_list(app->tabs);
+    for (GList *l = docs; l != NULL; l = l->next) photon_document_clear_errors(l->data);
+    g_list_free(docs);
 }
 
-static void
-on_redo(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    GtkSourceBuffer *buffer = photon_document_get_buffer(((PhotonApp *)user_data)->doc);
-    if (gtk_source_buffer_can_redo(buffer)) gtk_source_buffer_redo(buffer);
+void
+photon_app_show_errors(PhotonApp *app, GPtrArray *errors) {
+    const PhotonError *first = photon_errors_first(errors);
+
+    // The error may be in another file (an imported Lunar module, a header)
+    if (first != NULL && g_file_test(first->path, G_FILE_TEST_IS_REGULAR)) {
+        photon_app_open_file(app, first->path);
+    }
+
+    GList *docs = photon_tabs_list(app->tabs);
+    for (GList *l = docs; l != NULL; l = l->next) photon_document_show_errors(l->data, errors);
+    g_list_free(docs);
+    if (first == NULL) return;   // warnings only: marked, no jump
+
+    gchar *base = g_path_get_basename(first->path);
+    gchar *msg = g_strdup_printf("%s:%d: %s", base, first->line, first->message);
+    photon_statusbar_set_message(app->statusbar, msg, TRUE);
+    photon_document_goto(photon_app_current_doc(app), first->line, first->column);
+    g_free(base);
+    g_free(msg);
 }
 
-// Clipboard actions are keybinding signals on the view
+// ---------------------------------------------------------------------
+// Callbacks from tabs, status bar, sidebar
+// ---------------------------------------------------------------------
 static void
-emit_on_view(PhotonApp *app, const gchar *signal) {
-    g_signal_emit_by_name(photon_document_get_view(app->doc), signal);
-}
-
-static void on_cut(GtkWidget *i G_GNUC_UNUSED, gpointer app)   { emit_on_view(app, "cut-clipboard"); }
-static void on_copy(GtkWidget *i G_GNUC_UNUSED, gpointer app)  { emit_on_view(app, "copy-clipboard"); }
-static void on_paste(GtkWidget *i G_GNUC_UNUSED, gpointer app) { emit_on_view(app, "paste-clipboard"); }
-
-static void
-on_select_all(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
+on_tab_switched(PhotonDocument *doc, gpointer user_data) {
     PhotonApp *app = user_data;
-    g_signal_emit_by_name(photon_document_get_view(app->doc), "select-all", TRUE);
+    update_window(app, doc);
+    if (photon_tabs_current(app->tabs) == doc) {
+        photon_search_document_changed(app->search);
+        save_session(app);   // remember which tab was in front
+    }
 }
 
 static void
-on_toggle_comment(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    photon_editing_toggle_comment(((PhotonApp *)user_data)->doc);
+on_tab_close(PhotonDocument *doc, gpointer user_data) {
+    photon_app_close_document(user_data, doc);
 }
 
 static void
-on_toggle_sidebar(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    photon_sidebar_toggle(((PhotonApp *)user_data)->sidebar);
+on_doc_changed(PhotonDocument *doc, PhotonDocChange what, gpointer user_data) {
+    PhotonApp *app = user_data;
+    if (what & PHOTON_DOC_LANGUAGE) photon_completion_attach(app->completion, doc);
+    if (doc == photon_tabs_current(app->tabs)) update_window(app, doc);
 }
 
 static void
-on_toggle_terminal(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    photon_panel_toggle_terminal(((PhotonApp *)user_data)->panel);
-}
-
-static void
-on_run(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    photon_runner_run(((PhotonApp *)user_data)->runner);
-}
-
-static void
-on_stop(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    photon_runner_stop(((PhotonApp *)user_data)->runner);
-}
-
-static void
-on_locate_lunar(GtkWidget *item G_GNUC_UNUSED, gpointer user_data) {
-    g_free(photon_runner_locate_lunar(((PhotonApp *)user_data)->runner));
+on_language_picked(const PhotonLanguage *language, gpointer user_data) {
+    PhotonApp *app = user_data;
+    photon_document_set_language(photon_app_current_doc(app), language);
 }
 
 static void
@@ -235,120 +456,54 @@ on_sidebar_open(const gchar *path, gpointer user_data) {
     photon_app_open_file(user_data, path);
 }
 
-// ---------------------------------------------------------------------
-// Menu bar
-// ---------------------------------------------------------------------
-
-// Adds a submenu titled `title` to the menu bar and returns it
-static GtkWidget *
-add_menu(GtkWidget *menu_bar, const gchar *title) {
-    GtkWidget *menu = gtk_menu_new();
-    GtkWidget *item = gtk_menu_item_new_with_label(title);
-    gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), menu);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu_bar), item);
-    return menu;
-}
-
-static void
-add_shortcut(GtkWidget *item, GtkAccelGroup *accel, const gchar *shortcut) {
-    guint key;
-    GdkModifierType mods;
-    gtk_accelerator_parse(shortcut, &key, &mods);
-    if (key != 0) gtk_widget_add_accelerator(item, "activate", accel, key, mods, GTK_ACCEL_VISIBLE);
-}
-
-// Adds an item with an optional shortcut and returns it. Always write
-// shortcuts with "<Primary>": GTK maps it to Cmd on macOS and Ctrl on Linux.
-static GtkWidget *
-add_item(GtkWidget *menu, GtkAccelGroup *accel, const gchar *label,
-         const gchar *shortcut, GCallback callback, PhotonApp *app) {
-    GtkWidget *item = gtk_menu_item_new_with_label(label);
-    if (shortcut != NULL) add_shortcut(item, accel, shortcut);
-    g_signal_connect(item, "activate", callback, app);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-    return item;
-}
-
-static void
-add_separator(GtkWidget *menu) {
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
-}
-
-static void
-build_file_menu(PhotonApp *app, GtkWidget *menu_bar, GtkAccelGroup *accel) {
-    GtkWidget *menu = add_menu(menu_bar, "File");
-    add_item(menu, accel, "Open",       "<Primary>o",        G_CALLBACK(on_open),    app);
-    add_item(menu, accel, "Save",       "<Primary>s",        G_CALLBACK(on_save),    app);
-    add_item(menu, accel, "Save As...", "<Primary><Shift>s", G_CALLBACK(on_save_as), app);
-    add_separator(menu);
-
-    GtkWidget *autosave = gtk_check_menu_item_new_with_label("Auto Save (every 30s)");
-    g_signal_connect(autosave, "toggled", G_CALLBACK(on_autosave_toggled), app);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), autosave);   // off by default
-
-    add_separator(menu);
-    add_item(menu, accel, "Quit", "<Primary>q", G_CALLBACK(on_quit), app);
-}
-
-static void
-build_edit_menu(PhotonApp *app, GtkWidget *menu_bar, GtkAccelGroup *accel) {
-    GtkWidget *menu = add_menu(menu_bar, "Edit");
-    add_item(menu, accel, "Undo",           "<Primary>z",        G_CALLBACK(on_undo),           app);
-    add_item(menu, accel, "Redo",           "<Primary><Shift>z", G_CALLBACK(on_redo),           app);
-    add_separator(menu);
-    add_item(menu, accel, "Cut",            "<Primary>x",        G_CALLBACK(on_cut),            app);
-    add_item(menu, accel, "Copy",           "<Primary>c",        G_CALLBACK(on_copy),           app);
-    add_item(menu, accel, "Paste",          "<Primary>v",        G_CALLBACK(on_paste),          app);
-    add_separator(menu);
-    add_item(menu, accel, "Select All",     "<Primary>a",        G_CALLBACK(on_select_all),     app);
-    add_item(menu, accel, "Toggle Comment", "<Primary>slash",    G_CALLBACK(on_toggle_comment), app);
-}
-
-static void
-build_view_menu(PhotonApp *app, GtkWidget *menu_bar, GtkAccelGroup *accel) {
-    GtkWidget *menu = add_menu(menu_bar, "View");
-    add_item(menu, accel, "Toggle Sidebar",  "<Primary>b", G_CALLBACK(on_toggle_sidebar),  app);
-    add_item(menu, accel, "Toggle Terminal", "<Primary>t", G_CALLBACK(on_toggle_terminal), app);
-}
-
-static void
-build_run_menu(PhotonApp *app, GtkWidget *menu_bar, GtkAccelGroup *accel) {
-    GtkWidget *menu = add_menu(menu_bar, "Run");
-    GtkWidget *run = add_item(menu, accel, "Run", "<Primary>r", G_CALLBACK(on_run), app);
-    add_shortcut(run, accel, "F5");
-    add_item(menu, accel, "Stop", "<Primary>period", G_CALLBACK(on_stop), app);
-    add_separator(menu);
-    add_item(menu, accel, "Locate Lunar...", NULL, G_CALLBACK(on_locate_lunar), app);
-}
-
-static GtkWidget *
-build_menu_bar(PhotonApp *app) {
-    GtkAccelGroup *accel = gtk_accel_group_new();
-    gtk_window_add_accel_group(GTK_WINDOW(app->window), accel);
-
-    GtkWidget *menu_bar = gtk_menu_bar_new();
-    build_file_menu(app, menu_bar, accel);
-    build_edit_menu(app, menu_bar, accel);
-    build_view_menu(app, menu_bar, accel);
-    build_run_menu(app, menu_bar, accel);
-
-    g_object_unref(accel); // the window holds its own reference
-    return menu_bar;
+static PhotonDocument *
+search_target(gpointer user_data) {
+    return photon_app_current_doc(user_data);
 }
 
 // ---------------------------------------------------------------------
-// Layout:  [ sidebar | menu bar / (editor over panel) ]
-//          [ status bar                                ]
+// Keys for the terminals on Linux
+//
+// <Primary> is Ctrl on Linux, so menu shortcuts would steal Ctrl+C, Ctrl+D,
+// Ctrl+R, Ctrl+W... from the shell. While a terminal has focus it gets keys
+// first, except the panel toggles. Ctrl+Shift+C / V copy and paste, like
+// every Linux terminal. On macOS (Cmd) nothing changes.
+// ---------------------------------------------------------------------
+static gboolean
+on_window_key_press(GtkWidget *window, GdkEventKey *event, gpointer user_data G_GNUC_UNUSED) {
+    GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(window));
+    if (!photon_platform_primary_is_control() || !VTE_IS_TERMINAL(focus)) return FALSE;
+
+    GdkModifierType mods = event->state & gtk_accelerator_get_default_mod_mask();
+    if (!(mods & GDK_CONTROL_MASK)) return FALSE;
+
+    guint key = gdk_keyval_to_lower(event->keyval);
+    if (key == GDK_KEY_grave || key == GDK_KEY_t) return FALSE;   // toggle terminal: menu handles it
+    if (mods == (GDK_CONTROL_MASK | GDK_SHIFT_MASK) && key == GDK_KEY_c) {
+        vte_terminal_copy_clipboard_format(VTE_TERMINAL(focus), VTE_FORMAT_TEXT);
+        return TRUE;
+    }
+    if (mods == (GDK_CONTROL_MASK | GDK_SHIFT_MASK) && key == GDK_KEY_v) {
+        vte_terminal_paste_clipboard(VTE_TERMINAL(focus));
+        return TRUE;
+    }
+    return gtk_window_propagate_key_event(GTK_WINDOW(window), event);
+}
+
+// ---------------------------------------------------------------------
+// Layout:  [ sidebar | menu bar / search bar / (tabs over panel) ]
+//          [ status bar                                          ]
 // ---------------------------------------------------------------------
 static GtkWidget *
 build_layout(PhotonApp *app) {
     GtkWidget *editor_split = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
-    gtk_paned_pack1(GTK_PANED(editor_split), photon_document_get_widget(app->doc), TRUE, FALSE);
+    gtk_paned_pack1(GTK_PANED(editor_split), photon_tabs_get_widget(app->tabs), TRUE, FALSE);
     gtk_paned_pack2(GTK_PANED(editor_split), photon_panel_get_widget(app->panel), FALSE, FALSE);
-    gtk_paned_set_position(GTK_PANED(editor_split), 420);
+    gtk_paned_set_position(GTK_PANED(editor_split), 400);
 
     GtkWidget *right = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_box_pack_start(GTK_BOX(right), build_menu_bar(app), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(right), photon_menus_build(app), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(right), photon_search_get_widget(app->search), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(right), editor_split, TRUE, TRUE, 0);
 
     GtkWidget *main_split = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
@@ -363,57 +518,89 @@ build_layout(PhotonApp *app) {
 }
 
 static void
-open_initial_file(PhotonApp *app, const gchar *file) {
-    if (file == NULL) return;
+open_initial_files(PhotonApp *app, const PhotonAppOptions *options) {
+    if (app->use_session) restore_session(app);
 
-    if (g_file_test(file, G_FILE_TEST_EXISTS)) {
-        photon_app_open_file(app, file);
-    } else {
+    if (options->file != NULL && g_file_test(options->file, G_FILE_TEST_EXISTS)) {
+        photon_app_open_file(app, options->file);
+    } else if (options->file != NULL) {
         // Not on disk yet: remember the name so Save (not Save As) writes there
-        photon_document_set_path(app->doc, file);
+        PhotonDocument *doc = photon_app_new_document(app, NULL);
+        photon_document_set_path(doc, options->file);
     }
+
+    if (photon_tabs_count(app->tabs) == 0) photon_app_new_document(app, photon_languages_find("lunar"));
+}
+
+static void
+create_modules(PhotonApp *app, const PhotonAppOptions *options) {
+    PhotonTabsCallbacks tab_callbacks = {
+        .close_requested = on_tab_close,
+        .switched = on_tab_switched,
+        .doc_changed = on_doc_changed,
+        .user_data = app,
+    };
+
+    app->settings = photon_settings_load();
+    app->statusbar = photon_statusbar_new(on_language_picked, app);
+    app->completion = photon_completion_new();
+    app->tabs = photon_tabs_new(&tab_callbacks);
+    app->search = photon_search_new(search_target, app);
+    app->panel = photon_panel_new(options->root_dir);
+    app->runner = photon_runner_new(app);
+    app->sidebar = photon_sidebar_new(options->root_dir, on_sidebar_open, app);
 }
 
 PhotonApp *
 photon_app_new(const PhotonAppOptions *options) {
     PhotonApp *app = g_new0(PhotonApp, 1);
+    app->theme = options->theme;
+    app->root_dir = g_strdup(options->root_dir);
+    app->use_session = options->use_session;
 
     app->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_default_size(GTK_WINDOW(app->window), 1000, 650);
+    gtk_window_set_default_size(GTK_WINDOW(app->window), 1100, 700);
     gtk_window_set_icon_name(GTK_WINDOW(app->window), "photon");
-    g_signal_connect(app->window, "delete-event", G_CALLBACK(gtk_main_quit), NULL);
+    g_signal_connect(app->window, "delete-event", G_CALLBACK(on_delete_event), app);
+    g_signal_connect(app->window, "key-press-event", G_CALLBACK(on_window_key_press), app);
 
-    app->settings = photon_settings_load();
-    app->statusbar = photon_statusbar_new();
-    app->doc = photon_document_new();
-    app->panel = photon_panel_new(options->root_dir);
-    app->runner = photon_runner_new(app);
-    app->sidebar = photon_sidebar_new(options->root_dir, on_sidebar_open, app);
+    create_modules(app, options);
+    photon_theme_set_font_size(app->theme,
+        photon_settings_get_int(app->settings, EDITOR_GROUP, "font_size", PHOTON_FONT_SIZE_DEFAULT));
 
     gtk_container_add(GTK_CONTAINER(app->window), build_layout(app));
-    open_initial_file(app, options->file);
-    update_title(app);
+    open_initial_files(app, options);
 
     // Show everything, then hide what starts hidden
     gtk_widget_show_all(app->window);
     if (!options->show_sidebar) gtk_widget_hide(photon_sidebar_get_widget(app->sidebar));
     gtk_widget_hide(photon_panel_get_widget(app->panel));
-
+    photon_search_hide(app->search);
+    update_window(app, photon_app_current_doc(app));
     return app;
 }
 
 void
 photon_app_free(PhotonApp *app) {
     if (app == NULL) return;
-    if (app->autosave_id != 0) g_source_remove(app->autosave_id);
+    app->quitting = TRUE;
+    photon_app_set_autosave(app, FALSE);
+
     // Modules drop their refs first (disconnecting their signals); the
     // window then destroys the widgets for real.
+    GList *docs = photon_tabs_list(app->tabs);
+    for (GList *l = docs; l != NULL; l = l->next) remove_document(app, l->data);
+    g_list_free(docs);
+
     photon_runner_free(app->runner);
+    photon_tabs_free(app->tabs);
+    photon_search_free(app->search);
+    photon_completion_free(app->completion);
     photon_sidebar_free(app->sidebar);
     photon_panel_free(app->panel);
-    photon_document_free(app->doc);
     photon_statusbar_free(app->statusbar);
     gtk_widget_destroy(app->window);
     photon_settings_free(app->settings);
+    g_free(app->root_dir);
     g_free(app);
 }

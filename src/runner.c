@@ -381,10 +381,11 @@ photon_runner_run(PhotonRunner *runner) {
         photon_statusbar_set_message(app->statusbar, "Already running. Stop it first.", TRUE);
         return;
     }
-    if (!photon_app_save(app)) return;   // cancelled or failed
+    if (!photon_app_save(app, photon_app_current_doc(app))) return;   // cancelled or failed
 
-    const gchar *file = photon_document_get_path(app->doc);
-    const PhotonLanguage *lang = photon_document_get_language(app->doc);
+    PhotonDocument *doc = photon_app_current_doc(app);
+    const gchar *file = photon_document_get_path(doc);
+    const PhotonLanguage *lang = photon_document_get_language(doc);
     if (lang == NULL || lang->run_cmd == NULL) {
         photon_statusbar_set_message(app->statusbar, "Photon doesn't know how to run this file.", TRUE);
         return;
@@ -399,7 +400,7 @@ photon_runner_run(PhotonRunner *runner) {
         return;
     }
 
-    photon_document_clear_errors(app->doc);
+    photon_app_clear_errors(app);
     photon_statusbar_set_message(app->statusbar, NULL, FALSE);
     runner->source = g_strdup(file);
     runner->dir = dir;

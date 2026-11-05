@@ -23,6 +23,10 @@ gchar *photon_platform_executable_dir(void);
 // install prefix.
 gchar *photon_platform_data_dir(void);
 
+// TRUE where GTK's <Primary> modifier is Ctrl (Linux): menu shortcuts
+// would then collide with terminal keys like Ctrl+C. FALSE on macOS (Cmd).
+gboolean photon_platform_primary_is_control(void);
+
 // Shell to use when VTE can't tell us the user's login shell.
 const gchar *photon_platform_fallback_shell(void);
 

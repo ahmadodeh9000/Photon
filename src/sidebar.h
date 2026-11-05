@@ -23,4 +23,7 @@ void           photon_sidebar_free(PhotonSidebar *sidebar);
 GtkWidget *photon_sidebar_get_widget(PhotonSidebar *sidebar);
 void       photon_sidebar_toggle(PhotonSidebar *sidebar);
 
+// Re-read the folder (after a save / new file), keeping open folders open.
+void       photon_sidebar_refresh(PhotonSidebar *sidebar);
+
 #endif

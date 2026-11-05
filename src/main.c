@@ -85,13 +85,13 @@ resolve_options(const Args *args, PhotonAppOptions *options, gchar **root_out) {
 
 // --smoke-test: fail if the Lunar language or the style scheme didn't load
 static gboolean
-resources_ok(void) {
+resources_ok(PhotonTheme *theme) {
     gboolean ok = TRUE;
     if (photon_languages_get("lunar") == NULL) {
         g_printerr("smoke test: language 'lunar' not found\n");
         ok = FALSE;
     }
-    if (photon_theme_get_scheme() == NULL) {
+    if (photon_theme_get_scheme(theme) == NULL) {
         g_printerr("smoke test: style scheme not found\n");
         ok = FALSE;
     }
@@ -153,9 +153,10 @@ main(int argc, char *argv[]) {
     gchar *data_dir = photon_platform_data_dir();
     if (data_dir == NULL) g_printerr("Photon data folder (lang/, styles/) not found; set PHOTON_DATA_DIR.\n");
     photon_languages_init(data_dir);
-    photon_theme_init(data_dir);
+    PhotonTheme *theme = photon_theme_new(data_dir);
 
-    PhotonAppOptions options = { 0 };
+    // Smoke tests and screenshots must not touch the user's open-files list
+    PhotonAppOptions options = { .theme = theme, .use_session = !args.smoke_test };
     gchar *root_dir = NULL;
     resolve_options(&args, &options, &root_dir);
 
@@ -165,13 +166,14 @@ main(int argc, char *argv[]) {
     SmokeTest test = { app, args.screenshot };
     if (args.run && options.file != NULL) g_idle_add(run_soon, app);
     if (args.smoke_test) {
-        status = resources_ok() ? 0 : 1;
+        status = resources_ok(theme) ? 0 : 1;
         // A run (e.g. compiling C) gets a little longer to finish first
         g_timeout_add(args.run ? 3000 : 1500, finish_smoke_test, &test);
     }
     gtk_main();
 
     photon_app_free(app);
+    photon_theme_free(theme);
     g_free(root_dir);
     g_free(args.path);
     g_free(args.screenshot);
