@@ -18,6 +18,8 @@ MADE WITH LOVE
  *   photon --smoke-test    start, check that resources load, quit (for CI)
  *   photon --run FILE      open FILE and run it right away
  *   photon --screenshot out.png [FILE]   smoke test + save the window as a PNG
+ *   photon --theme ID      use a theme for this run (turbo90s, notepad95, amber,
+ *                          green, hotdog, vscode-dark); View > Theme saves one
  */
 #include <gtk/gtk.h>
 
@@ -35,12 +37,13 @@ typedef struct {
     gboolean smoke_test;
     gboolean run;         // --run: run the file once the window is up
     gchar   *screenshot;  // --screenshot FILE (implies --smoke-test)
+    gchar   *theme;       // --theme ID
     gchar   *path;        // first non-option argument, canonicalized
 } Args;
 
 static void
 print_usage(void) {
-    g_print("Usage: photon [--version] [--run] [--smoke-test] [--screenshot OUT.png] [FILE | FOLDER]\n");
+    g_print("Usage: photon [--version] [--run] [--theme ID] [--smoke-test] [--screenshot OUT.png] [FILE | FOLDER]\n");
 }
 
 // Returns FALSE on an unknown option
@@ -51,6 +54,8 @@ parse_args(int argc, char *argv[], Args *args) {
             args->version = TRUE;
         } else if (g_strcmp0(argv[i], "--smoke-test") == 0) {
             args->smoke_test = TRUE;
+        } else if (g_strcmp0(argv[i], "--theme") == 0 && i + 1 < argc) {
+            args->theme = g_strdup(argv[++i]);
         } else if (g_strcmp0(argv[i], "--run") == 0) {
             args->run = TRUE;
         } else if (g_strcmp0(argv[i], "--screenshot") == 0 && i + 1 < argc) {
@@ -156,7 +161,8 @@ main(int argc, char *argv[]) {
     PhotonTheme *theme = photon_theme_new(data_dir, NULL);   // the app applies the saved theme
 
     // Smoke tests and screenshots must not touch the user's open-files list
-    PhotonAppOptions options = { .theme = theme, .use_session = !args.smoke_test, .read_only = args.smoke_test };
+    PhotonAppOptions options = { .theme = theme, .use_session = !args.smoke_test, .read_only = args.smoke_test,
+                                 .theme_id = args.theme };
     gchar *root_dir = NULL;
     resolve_options(&args, &options, &root_dir);
 
@@ -177,6 +183,7 @@ main(int argc, char *argv[]) {
     g_free(root_dir);
     g_free(args.path);
     g_free(args.screenshot);
+    g_free(args.theme);
     g_free(data_dir);
     if (args.smoke_test && status == 0) g_print("smoke test: ok\n");
     return status;

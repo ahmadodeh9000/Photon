@@ -169,6 +169,14 @@ test_theme_switch(PhotonTheme *theme, const gchar *dir) {
     CHECK_STR(photon_theme_get_id(theme), "vscode-dark");
     CHECK_STR(scheme_of(photon_app_current_doc(app)), "vscode-dark");
     photon_app_set_theme(app, "turbo90s");
+
+    // Every theme: its CSS parses and its scheme exists and is applied
+    for (const gchar *const *id = photon_theme_ids(); *id != NULL; id++) {
+        CHECK(photon_theme_set(theme, *id));
+        CHECK(photon_theme_get_scheme(theme) != NULL);
+        CHECK_STR(scheme_of(photon_app_current_doc(app)), *id);
+    }
+    photon_app_set_theme(app, "turbo90s");
     photon_app_free(app);
 }
 

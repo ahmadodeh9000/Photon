@@ -53,6 +53,7 @@ typedef struct PhotonAppOptions {
     PhotonTheme *theme;         // required, outlives the app
     gboolean     use_session;   // reopen last files / remember open files
     gboolean     read_only;     // never write settings.ini (smoke tests)
+    const gchar *theme_id;      // theme for this run (--theme); NULL = the saved one
 } PhotonAppOptions;
 
 PhotonApp *photon_app_new(const PhotonAppOptions *options);

@@ -15,6 +15,7 @@
 #include <gtksourceview/gtksource.h>
 
 #include "languages.h"
+#include "theme.h"
 
 typedef struct PhotonDocument PhotonDocument;
 
@@ -66,8 +67,8 @@ GtkWidget            *photon_document_get_widget(PhotonDocument *doc);    // the
 void photon_document_show_errors(PhotonDocument *doc, GPtrArray *errors);
 void photon_document_clear_errors(PhotonDocument *doc);
 
-// Background of error / warning lines (CSS colors), set by the theme.
-void photon_document_set_marker_tint(PhotonDocument *doc, const gchar *error_tint, const gchar *warning_tint);
+// How error / warning lines look, from the theme.
+void photon_document_set_marker_colors(PhotonDocument *doc, const PhotonMarkerColors *colors);
 
 // Move the cursor to line/column (1-based, column 0 = line start) and scroll there.
 void photon_document_goto(PhotonDocument *doc, gint line, gint column);

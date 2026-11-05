@@ -264,16 +264,21 @@ photon_document_save(PhotonDocument *doc, GError **error) {
 // Error markers + navigation
 // ---------------------------------------------------------------------
 static void
-set_tint(GtkSourceView *view, const gchar *category, const gchar *color) {
+restyle_marks(GtkSourceView *view, const gchar *category, const gchar *line, const gchar *dot) {
     GtkSourceMarkAttributes *attrs = gtk_source_view_get_mark_attributes(view, category, NULL);
     GdkRGBA rgba;
-    if (attrs != NULL && gdk_rgba_parse(&rgba, color)) gtk_source_mark_attributes_set_background(attrs, &rgba);
+    if (attrs == NULL) return;
+    if (gdk_rgba_parse(&rgba, line)) gtk_source_mark_attributes_set_background(attrs, &rgba);
+
+    GdkPixbuf *pixbuf = make_dot(dot);
+    gtk_source_mark_attributes_set_pixbuf(attrs, pixbuf);
+    g_object_unref(pixbuf);
 }
 
 void
-photon_document_set_marker_tint(PhotonDocument *doc, const gchar *error_tint, const gchar *warning_tint) {
-    set_tint(GTK_SOURCE_VIEW(doc->view), MARK_ERROR, error_tint);
-    set_tint(GTK_SOURCE_VIEW(doc->view), MARK_WARNING, warning_tint);
+photon_document_set_marker_colors(PhotonDocument *doc, const PhotonMarkerColors *colors) {
+    restyle_marks(GTK_SOURCE_VIEW(doc->view), MARK_ERROR, colors->error_line, colors->error_dot);
+    restyle_marks(GTK_SOURCE_VIEW(doc->view), MARK_WARNING, colors->warning_line, colors->warning_dot);
     gtk_widget_queue_draw(doc->view);
 }
 

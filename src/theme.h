@@ -24,6 +24,14 @@
 
 typedef struct PhotonTheme PhotonTheme;
 
+// How error / warning lines look in the editor (CSS colors)
+typedef struct {
+    const gchar *error_line;     // line background
+    const gchar *warning_line;
+    const gchar *error_dot;      // gutter mark
+    const gchar *warning_dot;
+} PhotonMarkerColors;
+
 // Makes <data_dir>/styles and <data_dir>/icons visible, then applies the
 // theme `id` (or the default if unknown). Call right after gtk_init().
 PhotonTheme *photon_theme_new(const gchar *data_dir, const gchar *id);
@@ -33,7 +41,8 @@ void         photon_theme_free(PhotonTheme *theme);
 const gchar *const *photon_theme_ids(void);
 const gchar        *photon_theme_name(const gchar *id);
 
-// Switch themes; restyles everything attached. FALSE if `id` is unknown.
+// Switch themes; restyles everything attached. FALSE if `id` is unknown
+// or its CSS has an error.
 gboolean     photon_theme_set(PhotonTheme *theme, const gchar *id);
 const gchar *photon_theme_get_id(PhotonTheme *theme);
 
@@ -46,8 +55,7 @@ GtkSourceStyleScheme *photon_theme_get_scheme(PhotonTheme *theme);
 
 // Per-theme details the app applies itself.
 gboolean     photon_theme_has_title_strip(PhotonTheme *theme);
-const gchar *photon_theme_error_tint(PhotonTheme *theme);     // CSS color for error lines
-const gchar *photon_theme_warning_tint(PhotonTheme *theme);
+const PhotonMarkerColors *photon_theme_marker_colors(PhotonTheme *theme);
 
 // Make a scrolled window a sunken "well" (classic, non-overlay scrollbars).
 void photon_theme_make_well(GtkWidget *scrolled_window);

@@ -127,7 +127,7 @@ restore_session(PhotonApp *app) {
 static void
 add_document(PhotonApp *app, PhotonDocument *doc) {
     photon_theme_attach_buffer(app->theme, photon_document_get_buffer(doc));
-    photon_document_set_marker_tint(doc, photon_theme_error_tint(app->theme), photon_theme_warning_tint(app->theme));
+    photon_document_set_marker_colors(doc, photon_theme_marker_colors(app->theme));
     photon_completion_attach(app->completion, doc);
     g_signal_connect(photon_document_get_buffer(doc), "notify::cursor-position", G_CALLBACK(on_cursor_moved), app);
     photon_tabs_add(app->tabs, doc);
@@ -400,7 +400,7 @@ photon_app_set_theme(PhotonApp *app, const gchar *theme_id) {
     gtk_widget_set_visible(app->title_strip, photon_theme_has_title_strip(app->theme));
     GList *docs = photon_tabs_list(app->tabs);
     for (GList *l = docs; l != NULL; l = l->next) {
-        photon_document_set_marker_tint(l->data, photon_theme_error_tint(app->theme), photon_theme_warning_tint(app->theme));
+        photon_document_set_marker_colors(l->data, photon_theme_marker_colors(app->theme));
     }
     g_list_free(docs);
 }
@@ -608,7 +608,8 @@ photon_app_new(const PhotonAppOptions *options) {
         photon_settings_get_int(app->settings, EDITOR_GROUP, "font_size", PHOTON_FONT_SIZE_DEFAULT));
 
     // Before the menus are built, so View > Theme shows the right one
-    gchar *theme_id = photon_settings_get_string(app->settings, EDITOR_GROUP, "theme");
+    gchar *theme_id = options->theme_id != NULL ? g_strdup(options->theme_id)
+                    : photon_settings_get_string(app->settings, EDITOR_GROUP, "theme");
     if (theme_id == NULL || !photon_theme_set(app->theme, theme_id)) photon_theme_set(app->theme, PHOTON_THEME_DEFAULT);
     g_free(theme_id);
     gtk_container_add(GTK_CONTAINER(app->window), build_layout(app));

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="green" _name="Green Phosphor" version="1.0">
+  <author>Ahmad Odeh</author>
+  <_description>A green-screen terminal: one phosphor, brightness for emphasis</_description>
+
+  <!-- Editor -->
+  <style name="text"                    foreground="#33FF33" background="#000000"/>
+  <style name="selection"               foreground="#000000" background="#33FF33"/>
+  <style name="selection-unfocused"     foreground="#000000" background="#1F9E1F"/>
+  <style name="cursor"                  foreground="#66FF66"/>
+  <style name="current-line"            background="#001400"/>
+  <style name="line-numbers"            foreground="#1F9E1F" background="#000000"/>
+  <style name="current-line-number"     foreground="#66FF66" background="#000000" bold="true"/>
+  <style name="bracket-match"           foreground="#000000" background="#33FF33" bold="true"/>
+  <style name="bracket-mismatch"        foreground="#000000" background="#66FF66" bold="true"/>
+  <style name="right-margin"            foreground="#1F9E1F" background="#000000"/>
+  <style name="draw-spaces"             foreground="#1F9E1F"/>
+  <style name="search-match"            foreground="#66FF66" background="#0C4D0C"/>
+
+  <!-- Shared by every language -->
+  <style name="def:comment"             foreground="#1F9E1F"/>
+  <style name="def:shebang"             foreground="#1F9E1F"/>
+  <style name="def:doc-comment-element" foreground="#1F9E1F" bold="true"/>
+  <style name="def:keyword"             foreground="#66FF66" bold="true"/>
+  <style name="def:statement"           foreground="#66FF66" bold="true"/>
+  <style name="def:type"                foreground="#66FF66"/>
+  <style name="def:string"              foreground="#99FF99"/>
+  <style name="def:character"           foreground="#99FF99"/>
+  <style name="def:special-char"        foreground="#66FF66"/>
+  <style name="def:number"              foreground="#99FF99"/>
+  <style name="def:decimal"             foreground="#99FF99"/>
+  <style name="def:floating-point"      foreground="#99FF99"/>
+  <style name="def:base-n-integer"      foreground="#99FF99"/>
+  <style name="def:complex"             foreground="#99FF99"/>
+  <style name="def:boolean"             foreground="#99FF99"/>
+  <style name="def:constant"            foreground="#99FF99"/>
+  <style name="def:special-constant"    foreground="#99FF99"/>
+  <style name="def:builtin"             foreground="#33FF33"/>
+  <style name="def:function"            foreground="#33FF33"/>
+  <style name="def:identifier"          foreground="#33FF33"/>
+  <style name="def:operator"            foreground="#33FF33"/>
+  <style name="def:preprocessor"        foreground="#1F9E1F"/>
+  <style name="def:error"               foreground="#000000" background="#66FF66"/>
+  <style name="def:warning"             foreground="#000000" background="#1F9E1F"/>
+  <style name="def:note"                foreground="#000000" background="#33FF33"/>
+  <style name="def:net-address"         foreground="#99FF99" underline="true"/>
+
+  <!-- Lunar (lang/lunar.lang) -->
+  <style name="lunar:control-flow"      foreground="#66FF66" bold="true"/>
+  <style name="lunar:declaration"       foreground="#66FF66" bold="true"/>
+  <style name="lunar:self-super"        foreground="#66FF66" bold="true"/>
+  <style name="lunar:interpolation"     foreground="#66FF66" bold="true"/>
+  <style name="lunar:escape"            foreground="#66FF66"/>
+  <style name="lunar:invalid-escape"    foreground="#000000" background="#66FF66"/>
+  <style name="lunar:map-key"           foreground="#33FF33"/>
+  <style name="lunar:struct-name"       foreground="#66FF66"/>
+  <style name="lunar:constructor-call"  foreground="#66FF66"/>
+  <style name="lunar:function-name"     foreground="#33FF33" bold="true"/>
+  <style name="lunar:nil"               foreground="#99FF99"/>
+</style-scheme>
