@@ -60,10 +60,28 @@ resolve_root(const PhotonArgs *args, PhotonAppOptions *options, GPtrArray *files
     return root;
 }
 
-// --smoke-test: fail if the Lunar language or the style scheme didn't load
+// Is a font family available to Pango (and so to GTK)?
+static gboolean
+has_font_family(const gchar *name) {
+    PangoFontFamily **families = NULL;
+    int count = 0;
+    pango_font_map_list_families(pango_cairo_font_map_get_default(), &families, &count);
+    gboolean found = FALSE;
+    for (int i = 0; i < count && !found; i++) {
+        found = g_ascii_strcasecmp(pango_font_family_get_name(families[i]), name) == 0;
+    }
+    g_free(families);
+    return found;
+}
+
+// --smoke-test: fail if the Lunar language, the style scheme or Photon Mono didn't load
 static gboolean
 resources_ok(PhotonTheme *theme) {
     gboolean ok = TRUE;
+    if (!has_font_family("Photon Mono")) {
+        g_printerr("smoke test: font 'Photon Mono' not loaded\n");
+        ok = FALSE;
+    }
     if (photon_languages_get("lunar") == NULL) {
         g_printerr("smoke test: language 'lunar' not found\n");
         ok = FALSE;
@@ -80,7 +98,9 @@ static void
 save_screenshot(GtkWidget *window, const gchar *png_path) {
     int width = gtk_widget_get_allocated_width(window);
     int height = gtk_widget_get_allocated_height(window);
-    cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    int scale = gtk_widget_get_scale_factor(window);   // 2 on a Retina / HiDPI screen
+    cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width * scale, height * scale);
+    cairo_surface_set_device_scale(surface, scale, scale);
     cairo_t *cr = cairo_create(surface);
     gtk_widget_draw(window, cr);
     cairo_destroy(cr);
@@ -119,10 +139,12 @@ run_gui(int argc, char *argv[], const PhotonArgs *args) {
         photon_platform_redirect_output(log);   // nothing to the terminal
         g_free(log);
     }
-    gtk_init(&argc, &argv);
-
+    // Fonts first: Pango picks up the bundled ones when it starts with GTK
     gchar *data_dir = photon_platform_data_dir();
     if (data_dir == NULL) g_printerr("Photon data folder (lang/, styles/) not found; set PHOTON_DATA_DIR.\n");
+    photon_platform_load_fonts(data_dir);
+    gtk_init(&argc, &argv);
+
     photon_languages_init(data_dir);
     PhotonTheme *theme = photon_theme_new(data_dir, NULL);   // the app applies the saved theme
 

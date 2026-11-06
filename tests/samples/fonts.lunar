@@ -1,0 +1,9 @@
+// Photon Mono in Photon: 0O 1lI| rn m {}()[] ;:., 'x' `y`
+let greeting = "مرحبا بالعالم";   // Arabic, from the system fallback font
+let mixed = "x = 1 + 2 // مرحبا";
+print "{greeting} → done ✓ 🚀";
+if (a != b && c <= 10 || d >= 2) { ret x ** 2; }
+
+// ┌──────────┬───────┐  café, naïve, Ñandú, Größe ±2°C
+// │ box      │ ░▒▓█  │  “quotes” ‘single’ — dash … ellipsis
+// └──────────┴───────┘  ← ↑ → ↓ ↔  € ™ © ®

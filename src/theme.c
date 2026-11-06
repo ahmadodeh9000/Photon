@@ -15,21 +15,16 @@
 
 #include <string.h>
 
-// Font fallback chains: the first that exists wins. Every chain ends in
-// fonts that ship with macOS (Menlo, Monaco, Tahoma, Geneva) and with most
-// Linux desktops (DejaVu, Liberation).
-#define DOS_FONTS  "'Px437 IBM VGA 8x16', 'Px437 IBM VGA8', 'Perfect DOS VGA 437', " \
-                   "'Perfect DOS VGA 437 Win', Menlo, 'DejaVu Sans Mono', 'Liberation Mono', monospace"
-#define FIXEDSYS_FONTS "'Fixedsys Excelsior 3.01', 'Fixedsys Excelsior', Fixedsys, 'Lucida Console', " \
-                       "Monaco, 'DejaVu Sans Mono', 'Liberation Mono', monospace"
+// Font fallback chains: the first that exists wins.
+// Code: Photon Mono (our own, in fonts/, loaded at startup by platform.c),
+// then Menlo (macOS), DejaVu Sans Mono (Debian and most Linux), monospace.
+// UI: the Windows 95 fonts if installed, else what macOS / Linux ship.
+#define CODE_FONTS  "'Photon Mono', Menlo, 'DejaVu Sans Mono', monospace"
 #define WIN95_FONTS "'Pixelated MS Sans Serif', 'MS Sans Serif', 'Microsoft Sans Serif', " \
                     "Tahoma, Geneva, 'DejaVu Sans', 'Liberation Sans', sans-serif"
-#define MODERN_MONO "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro', " \
-                    "Menlo, 'DejaVu Sans Mono', 'Liberation Mono', monospace"
 
-// Pango lists for the terminals (same idea, Pango syntax)
-#define DOS_TERM_FONT      "Px437 IBM VGA 8x16, Perfect DOS VGA 437, Menlo, DejaVu Sans Mono, monospace 12"
-#define FIXEDSYS_TERM_FONT "Fixedsys Excelsior 3.01, Lucida Console, Monaco, DejaVu Sans Mono, monospace 12"
+// The same for the terminals (Pango syntax: families, then the size)
+#define TERM_FONT   "Photon Mono, Menlo, DejaVu Sans Mono, monospace 12"
 
 // Win95 bevels: two lines each side. Raised = light top-left, dark bottom-right.
 #define RAISED  "border: 1px solid; border-color: @hilite@ @dark@ @dark@ @hilite@;" \
@@ -175,7 +170,7 @@ typedef struct {
 // Turbo 90s: Win95 chrome around a Borland Turbo C++ blue screen
 static const Var TURBO_VARS[] = {
     SILVER_CHROME,
-    { "code_font", DOS_FONTS }, { "caret", "rgba(255, 255, 85, 0.65)" },
+    { "code_font", CODE_FONTS }, { "caret", "rgba(255, 255, 85, 0.65)" },
     { "popup_bg", "#00aaaa" }, { "popup_fg", "#000000" },
     { NULL, NULL }
 };
@@ -183,7 +178,7 @@ static const Var TURBO_VARS[] = {
 // Notepad 95: the same chrome, black on white like the editors of the day
 static const Var NOTEPAD_VARS[] = {
     SILVER_CHROME,
-    { "code_font", FIXEDSYS_FONTS }, { "caret", "rgba(0, 0, 0, 0.75)" },
+    { "code_font", CODE_FONTS }, { "caret", "rgba(0, 0, 0, 0.75)" },
     { "popup_bg", "#ffffff" }, { "popup_fg", "#000000" },
     { NULL, NULL }
 };
@@ -195,7 +190,7 @@ static const Var NOTEPAD_VARS[] = {
     { "title_a", MID }, { "title_b", DIM }, { "title_fg", "#000000" },                               \
     { "well_bg", "#000000" }, { "well_fg", MID }, { "track", "#000000" },                            \
     { "tip_bg", "#000000" }, { "tip_fg", BRIGHT }, { "error_fg", BRIGHT },                           \
-    { "ui_font", DOS_FONTS }, { "code_font", DOS_FONTS }, { "caret", BRIGHT },                       \
+    { "ui_font", CODE_FONTS }, { "code_font", CODE_FONTS }, { "caret", BRIGHT },                       \
     { "popup_bg", "#000000" }, { "popup_fg", MID }
 
 static const Var AMBER_VARS[] = { CRT_CHROME("#ffcc00", "#ffb000", "#7a5200"), { NULL, NULL } };
@@ -209,7 +204,7 @@ static const Var HOTDOG_VARS[] = {
     { "title_a", "#ffff00" }, { "title_b", "#ff0000" }, { "title_fg", "#000000" },
     { "well_bg", "#ffff00" }, { "well_fg", "#000000" }, { "track", "#ffff00" },
     { "tip_bg", "#ffff00" }, { "tip_fg", "#000000" }, { "error_fg", "#ffff00" },
-    { "ui_font", WIN95_FONTS }, { "code_font", FIXEDSYS_FONTS }, { "caret", "rgba(0, 0, 0, 0.75)" },
+    { "ui_font", WIN95_FONTS }, { "code_font", CODE_FONTS }, { "caret", "rgba(0, 0, 0, 0.75)" },
     { "popup_bg", "#ffff00" }, { "popup_fg", "#000000" },
     { NULL, NULL }
 };
@@ -248,7 +243,7 @@ static const gchar *VSCODE_CSS =
     ".photon-about-box { padding: 12px; }"
     ".photon-about-well { padding: 10px; }"
 
-    "textview { font-family: " MODERN_MONO "; }";
+    "textview { font-family: " CODE_FONTS "; }";
 
 // ---------------------------------------------------------------------
 // Registry
@@ -273,35 +268,35 @@ static const ThemeInfo THEMES[] = {
         .id = "turbo90s", .name = "Turbo 90s",
         .css = &WIN95_CSS, .vars = TURBO_VARS, .scheme = "turbo90s",
         .title_strip = TRUE,
-        .term_fg = "#aaaaaa", .term_bg = "#000000", .term_font = DOS_TERM_FONT,
+        .term_fg = "#aaaaaa", .term_bg = "#000000", .term_font = TERM_FONT,
         .markers = { "#aa0000", "#aa5500", "#ff5555", "#ffff55" },
     },
     {
         .id = "notepad95", .name = "Notepad 95",
         .css = &WIN95_CSS, .vars = NOTEPAD_VARS, .scheme = "notepad95",
         .title_strip = TRUE,
-        .term_fg = "#c0c0c0", .term_bg = "#000000", .term_font = FIXEDSYS_TERM_FONT,
+        .term_fg = "#c0c0c0", .term_bg = "#000000", .term_font = TERM_FONT,
         .markers = { "#ffc0c0", "#ffffc0", "#ff0000", "#808000" },
     },
     {
         .id = "amber", .name = "Amber CRT",
         .css = &WIN95_CSS, .vars = AMBER_VARS, .scheme = "amber",
         .dark = TRUE, .title_strip = TRUE,
-        .term_fg = "#ffb000", .term_bg = "#000000", .term_font = DOS_TERM_FONT, .term_mono = TRUE,
+        .term_fg = "#ffb000", .term_bg = "#000000", .term_font = TERM_FONT, .term_mono = TRUE,
         .markers = { "#5a3a00", "#3a2600", "#ffcc00", "#b37a00" },
     },
     {
         .id = "green", .name = "Green Phosphor",
         .css = &WIN95_CSS, .vars = GREEN_VARS, .scheme = "green",
         .dark = TRUE, .title_strip = TRUE,
-        .term_fg = "#33ff33", .term_bg = "#000000", .term_font = DOS_TERM_FONT, .term_mono = TRUE,
+        .term_fg = "#33ff33", .term_bg = "#000000", .term_font = TERM_FONT, .term_mono = TRUE,
         .markers = { "#0d4d0d", "#0a330a", "#66ff66", "#1f9e1f" },
     },
     {
         .id = "hotdog", .name = "Hot Dog Stand",
         .css = &WIN95_CSS, .vars = HOTDOG_VARS, .scheme = "hotdog",
         .title_strip = TRUE,
-        .term_fg = "#ffff00", .term_bg = "#800000", .term_font = FIXEDSYS_TERM_FONT,
+        .term_fg = "#ffff00", .term_bg = "#800000", .term_font = TERM_FONT,
         .markers = { "#ff8080", "#ffd080", "#000000", "#800000" },
     },
     {
@@ -309,7 +304,7 @@ static const ThemeInfo THEMES[] = {
         .css = &VSCODE_CSS, .vars = NULL, .scheme = "vscode-dark",
         .dark = TRUE, .title_strip = FALSE,
         .term_fg = "#cccccc", .term_bg = "#1e1e1e",
-        .term_font = "JetBrains Mono, Fira Code, Menlo, DejaVu Sans Mono, monospace 11",
+        .term_font = TERM_FONT,
         .markers = { "rgba(244,71,71,0.18)", "rgba(215,186,125,0.15)", "#f44747", "#d7ba7d" },
     },
 };

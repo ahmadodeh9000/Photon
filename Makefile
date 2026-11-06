@@ -9,6 +9,8 @@
 #   make app          macOS: build/Photon.app (icon, launcher, data inside)
 #   make install-app  macOS: Photon.app into $(APPDIR) + a `photon` command in $(PREFIX)/bin
 #   make uninstall-app
+#   make font         rebuild fonts/PhotonMono-Regular.ttf from tools/font/glyphs.txt
+#                     (needs: pip install -r tools/font/requirements.txt)
 #   make WERROR=1     treat warnings as errors (CI does this)
 #
 # ./install.sh wraps all of this; see the README.
@@ -24,6 +26,9 @@ ICON_SIZES := 16 32 48 64 128 256 512
 UNAME_S  := $(shell uname -s)
 
 PKGS := gtk+-3.0 gtksourceview-4 vte-2.91 gio-unix-2.0   # gio-unix comes with GLib
+ifeq ($(UNAME_S),Linux)
+  PKGS += fontconfig      # bundled fonts (platform.c); GTK already depends on it
+endif
 
 # macOS: let pkg-config see Homebrew's .pc files (Apple Silicon or Intel).
 # Set inline because make 3.81 (Apple's) doesn't export vars to $(shell).
@@ -36,7 +41,7 @@ ifeq ($(UNAME_S),Darwin)
 endif
 
 # Only demand the libraries for targets that compile something
-NO_DEPS_GOALS := deps clean uninstall uninstall-app
+NO_DEPS_GOALS := deps clean uninstall uninstall-app font
 ifneq ($(MAKECMDGOALS),)
 ifeq ($(filter-out $(NO_DEPS_GOALS),$(MAKECMDGOALS)),)
   SKIP_PKG_CHECK := 1
@@ -60,13 +65,16 @@ CFLAGS   += -std=gnu11 $(WARNINGS)
 CPPFLAGS += $(PKG_CFLAGS) -MMD -MP \
             -DPHOTON_VERSION=\"$(VERSION)\" -DPHOTON_DATADIR=\"$(DATADIR)\"
 LDLIBS   += $(PKG_LIBS)
+ifeq ($(UNAME_S),Darwin)
+  LDLIBS += -framework CoreText -framework CoreFoundation   # bundled fonts (platform.c)
+endif
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(patsubst src/%.c,$(BUILDDIR)/%.o,$(SRCS))
 LIB_OBJS := $(filter-out $(BUILDDIR)/main.o,$(OBJS))   # everything but main(), for tests
 TESTS := $(BUILDDIR)/test_errors $(BUILDDIR)/test_editing $(BUILDDIR)/test_app
 
-.PHONY: all deps check test install uninstall app install-app uninstall-app clean
+.PHONY: all deps check test install uninstall app install-app uninstall-app font clean
 
 all: $(TARGET)
 
@@ -115,8 +123,10 @@ test: $(TESTS) $(TARGET)
 # install / uninstall
 # ---------------------------------------------------------------------
 install: $(TARGET)
-	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(DATADIR)/lang $(DESTDIR)$(DATADIR)/styles $(DESTDIR)$(DATADIR)/icons
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(DATADIR)/lang $(DESTDIR)$(DATADIR)/styles $(DESTDIR)$(DATADIR)/icons \
+	           $(DESTDIR)$(DATADIR)/fonts
 	install -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/photon
+	install -m 644 fonts/*.ttf fonts/OFL.txt fonts/LICENSE $(DESTDIR)$(DATADIR)/fonts/
 	install -m 644 lang/*.lang $(DESTDIR)$(DATADIR)/lang/
 	install -m 644 styles/*.xml $(DESTDIR)$(DATADIR)/styles/
 	install -m 644 icons/photon.png $(DESTDIR)$(DATADIR)/icons/photon.png
@@ -145,7 +155,7 @@ uninstall:
 # ---------------------------------------------------------------------
 APP_STAMP := $(APP)/Contents/Info.plist
 APP_INPUTS := $(TARGET) data/Info.plist.in data/photon-launcher.sh icons/photon.icns icons/photon.png \
-              $(wildcard lang/*.lang) $(wildcard styles/*.xml)
+              $(wildcard lang/*.lang) $(wildcard styles/*.xml) $(wildcard fonts/*)
 
 app: $(APP_STAMP)
 
@@ -156,13 +166,15 @@ ifneq ($(UNAME_S),Darwin)
 	$(error make app is for macOS; on Linux use make install)
 endif
 	rm -rf $(APP)
-	install -d $(APP)/Contents/MacOS $(APP)/Contents/Resources/lang $(APP)/Contents/Resources/styles $(APP)/Contents/Resources/icons
+	install -d $(APP)/Contents/MacOS $(APP)/Contents/Resources/lang $(APP)/Contents/Resources/styles \
+	           $(APP)/Contents/Resources/icons $(APP)/Contents/Resources/fonts
 	install -m 755 data/photon-launcher.sh $(APP)/Contents/MacOS/Photon
 	install -m 755 $(TARGET) $(APP)/Contents/MacOS/photon-bin
 	install -m 644 icons/photon.icns $(APP)/Contents/Resources/photon.icns
 	install -m 644 lang/*.lang $(APP)/Contents/Resources/lang/
 	install -m 644 styles/*.xml $(APP)/Contents/Resources/styles/
 	install -m 644 icons/photon.png $(APP)/Contents/Resources/icons/photon.png
+	install -m 644 fonts/*.ttf fonts/OFL.txt fonts/LICENSE $(APP)/Contents/Resources/fonts/
 	sed 's|@VERSION@|$(VERSION)|g' data/Info.plist.in > $@   # last: marks the bundle complete
 
 # The `photon` command execs the program inside the bundle (a symlink wouldn't do:
@@ -178,6 +190,12 @@ install-app: $(APP_STAMP)
 uninstall-app:
 	rm -rf $(DESTDIR)$(APPDIR)/Photon.app
 	rm -f $(DESTDIR)$(PREFIX)/bin/photon
+
+# ---------------------------------------------------------------------
+# make font: Photon Mono from its pixel drawings (tools/font/)
+# ---------------------------------------------------------------------
+font:
+	python3 tools/font/build.py --style smooth --out fonts/PhotonMono-Regular.ttf
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)

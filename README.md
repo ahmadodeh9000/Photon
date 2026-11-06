@@ -50,6 +50,8 @@ the window attached to the terminal while working on Photon itself, and
   | Hot Dog Stand | `hotdog` | red and mustard, after the loudest Windows 3.1 color scheme |
   | VS Code Dark | `vscode-dark` | the modern dark look |
 
+- **Photon Mono**, our own retro monospace font (below), and a font picker
+  (View > Fonts…) for the code and interface fonts with a live preview
 - Zoom, auto save, a file tree that refreshes when you save
 
 ---
@@ -159,11 +161,30 @@ Other targets: `make test` (unit tests), `make check` (start, check, quit),
 
 ### Fonts
 
-The 90s themes use period fonts if you have them installed: a DOS font such as
-[Px437 IBM VGA 8x16](https://int10h.org/oldschool-pc-fonts/), Fixedsys
-Excelsior, and Pixelated MS Sans Serif for menus. Without them they use
-Menlo / Monaco / Tahoma / Geneva on macOS and DejaVu on Linux, and still look
-the part.
+Code is set in **Photon Mono**, a monospace font made for Photon: drawn on a
+VGA-style 10x16 pixel grid, but as clean vector shapes, so it stays sharp at
+any size and on Retina screens. It's built for long coding sessions: a tall
+x-height, a dotted `0`, distinct `1 l I |`, `' `` ` ``, `rn`/`m`, and `{} () []`,
+and no ligatures. It covers ASCII, Latin-1, box drawing, blocks, arrows and
+typographic quotes; for anything else (Arabic, emoji, ...) your system's
+fonts take over. It ships in `fonts/` and is loaded at startup, nothing to
+install; if it can't load, Photon falls back to Menlo (macOS) or DejaVu Sans
+Mono (Linux).
+
+View > Fonts… (Cmd/Ctrl+,) picks any other code or interface font and size;
+your choice wins over the theme's. The interface uses the Windows 95 fonts if
+you have them (Pixelated MS Sans Serif), else Tahoma / Geneva on macOS and
+DejaVu Sans on Linux.
+
+Photon Mono is © 2026 Ahmad Odeh under the SIL Open Font License 1.1
+(`fonts/OFL.txt`). To change a letter, edit its pixel grid in
+`tools/font/glyphs.txt` and rebuild:
+
+```bash
+pip install -r tools/font/requirements.txt   # fontTools + skia-pathops (once; a venv is fine)
+make font                                      # writes fonts/PhotonMono-Regular.ttf
+python3 tools/font/specimen.py fonts/PhotonMono-Regular.ttf specimen.png   # look at it
+```
 
 ### The icon
 
@@ -207,6 +228,8 @@ covers the details, plus how to add menu items, shortcuts and themes.
 src/                     C sources, one module per job (see docs/ARCHITECTURE.md)
 lang/lunar.lang          Lunar syntax definition
 styles/                  code color schemes, one per theme
+fonts/                   Photon Mono (.ttf) + its license (OFL.txt)
+tools/font/              Photon Mono's pixel drawings (glyphs.txt), build.py, specimen.py
 icons/                   app icon, every size + photon.icns (from tools/make_icon.py)
 data/                    Linux .desktop entry, macOS Info.plist + launcher
 install.sh               installer for macOS and Linux

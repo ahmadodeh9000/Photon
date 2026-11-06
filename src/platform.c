@@ -9,14 +9,20 @@
 #include "platform.h"
 
 #include <fcntl.h>
+#include <string.h>
 #include <glib/gstdio.h>
 #include <unistd.h>
 
 #ifdef __APPLE__
+#include <CoreText/CoreText.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
 #include <stdint.h>
 #include <sys/resource.h>
+#endif
+
+#ifdef __linux__
+#include <fontconfig/fontconfig.h>
 #endif
 
 #ifndef PHOTON_DATADIR
@@ -188,6 +194,50 @@ photon_platform_start_detached(gchar **args, GError **error) {
     g_ptr_array_free(argv, TRUE);
     g_free(exe);
     return ok;
+}
+
+// ---------------------------------------------------------------------
+// Bundled fonts
+// ---------------------------------------------------------------------
+static gboolean
+load_font_file(const gchar *path) {
+#if defined(__APPLE__)
+    CFURLRef url = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8 *)path, (CFIndex)strlen(path), false);
+    CFErrorRef error = NULL;
+    gboolean ok = CTFontManagerRegisterFontsForURL(url, kCTFontManagerScopeProcess, &error);
+    if (!ok && error != NULL) {
+        // Registered already (e.g. two Photon data folders): that's fine
+        ok = CFErrorGetCode(error) == kCTFontManagerErrorAlreadyRegistered;
+        CFRelease(error);
+    }
+    CFRelease(url);
+    return ok;
+#elif defined(__linux__)
+    return FcConfigAppFontAddFile(FcConfigGetCurrent(), (const FcChar8 *)path);
+#else
+    (void)path;
+    return FALSE;
+#endif
+}
+
+gint
+photon_platform_load_fonts(const gchar *data_dir) {
+    if (data_dir == NULL) return 0;
+    gchar *dir_path = g_build_filename(data_dir, "fonts", NULL);
+    GDir *dir = g_dir_open(dir_path, 0, NULL);
+    gint loaded = 0;
+
+    const gchar *name;
+    while (dir != NULL && (name = g_dir_read_name(dir)) != NULL) {
+        if (!g_str_has_suffix(name, ".ttf") && !g_str_has_suffix(name, ".otf")) continue;
+        gchar *path = g_build_filename(dir_path, name, NULL);
+        if (load_font_file(path)) loaded++;
+        else g_printerr("Could not load font %s\n", path);
+        g_free(path);
+    }
+    if (dir != NULL) g_dir_close(dir);
+    g_free(dir_path);
+    return loaded;
 }
 
 gchar *

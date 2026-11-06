@@ -37,6 +37,11 @@ gchar *photon_platform_executable_path(void);
 // (`open -a`), so the Dock shows it as Photon with its icon.
 gboolean photon_platform_start_detached(gchar **args, GError **error);
 
+// Make the fonts in <data_dir>/fonts (Photon Mono) usable by this process
+// only, with nothing installed on the system: CoreText on macOS, fontconfig
+// on Linux. Call before gtk_init(). Returns how many font files loaded.
+gint photon_platform_load_fonts(const gchar *data_dir);
+
 // Folder for Photon's single-instance socket (newly allocated, created).
 // It must be the same for a terminal and for the desktop: on macOS that's
 // ~/Library/Caches/photon (apps started by Finder/LaunchServices don't get

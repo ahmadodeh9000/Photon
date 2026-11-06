@@ -38,6 +38,16 @@ jobs:
           $GUI make check
           $GUI make test
 
+      - name: Photon Mono rebuilds from tools/font/glyphs.txt (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/fontenv"
+          "$RUNNER_TEMP/fontenv/bin/pip" install -q -r tools/font/requirements.txt
+          "$RUNNER_TEMP/fontenv/bin/python" tools/font/build.py --out "$RUNNER_TEMP/PhotonMono-check.ttf"
+          cmp "$RUNNER_TEMP/PhotonMono-check.ttf" fonts/PhotonMono-Regular.ttf \
+            || { echo "fonts/PhotonMono-Regular.ttf is out of date: run make font"; exit 1; }
+          "$RUNNER_TEMP/fontenv/bin/python" tools/font/specimen.py fonts/PhotonMono-Regular.ttf photon-font-specimen.png
+
       - name: Screenshots (every theme, and a run)
         run: |
           $GUI ./Photon --run --screenshot photon-run-${{ matrix.os }}.png tests/samples/hello.py
@@ -91,7 +101,8 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends build-essential pkg-config git ca-certificates \
-            libgtk-3-dev libgtksourceview-4-dev libvte-2.91-dev xvfb xauth python3 procps
+            libgtk-3-dev libgtksourceview-4-dev libvte-2.91-dev xvfb xauth python3 procps \
+            fonts-dejavu-core
 
       - uses: actions/checkout@v4
 
@@ -104,3 +115,16 @@ jobs:
           xvfb-run -a python3 tests/test_launcher.py /opt/photon/bin/photon
           ./install.sh --prefix /opt/photon --uninstall
           test ! -e /opt/photon/bin/photon
+
+      - name: Screenshots (Photon Mono with Arabic + emoji fallback, and a run)
+        run: |
+          xvfb-run -a ./Photon --theme turbo90s --screenshot photon-fonts-debian.png tests/samples/fonts.lunar
+          xvfb-run -a ./Photon --theme turbo90s --run --screenshot photon-run-debian.png tests/samples/hello.py
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-debian
+          path: photon-*.png
+          if-no-files-found: ignore
