@@ -1,0 +1,12 @@
+Photon Mono
+Copyright (c) 2026, Ahmad Odeh (https://github.com/ahmadodeh9000/Photon).
+
+The font in this folder (PhotonMono-Regular.ttf) and its sources
+(tools/font/glyphs.txt, tools/font/build.py) are licensed under the SIL Open
+Font License, Version 1.1; the full text is in OFL.txt next to this file and
+at https://openfontlicense.org.
+
+It is an original design drawn for Photon on a 10x16 pixel grid. No outlines
+or bitmaps from other fonts were used.
+
+The rest of Photon is under the MIT license (see the README).

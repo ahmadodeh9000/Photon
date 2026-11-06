@@ -1,0 +1,5 @@
+# Exact versions, so `make font` gives the same file as the one in fonts/
+fonttools==4.68.0
+skia-pathops==0.9.2
+# For tools/font/specimen.py only
+pillow>=10
