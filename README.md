@@ -74,7 +74,8 @@ Cmd on macOS, Ctrl on Linux.
 | Alt + Up / Down | Move line up / down |
 | Cmd/Ctrl + B | Toggle the file tree |
 | Cmd/Ctrl + \` or Cmd/Ctrl + T | Toggle the terminal |
-| Cmd/Ctrl + + / - / 0 | Zoom in / out / reset |
+| Cmd/Ctrl + + / - / 0 | Zoom in / out / back to your chosen size |
+| Cmd/Ctrl + , | Fonts: code and interface font + size, with a live preview |
 | Cmd/Ctrl + Q | Quit (asks about unsaved files) |
 
 On Linux, while a terminal has focus it gets Ctrl keys first (Ctrl+C, Ctrl+D,

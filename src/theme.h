@@ -60,8 +60,27 @@ const PhotonMarkerColors *photon_theme_marker_colors(PhotonTheme *theme);
 // Make a scrolled window a sunken "well" (classic, non-overlay scrollbars).
 void photon_theme_make_well(GtkWidget *scrolled_window);
 
-// Code font size in points (clamped). Applies to every editor at once.
-void photon_theme_set_font_size(PhotonTheme *theme, gint points);
-gint photon_theme_get_font_size(PhotonTheme *theme);
+// ---- Fonts ----------------------------------------------------------
+// The user's choice. A NULL family means "the theme's suggestion", a size
+// of 0 the default size. The choice always wins over the theme.
+typedef struct {
+    gchar *code_family;   // editor + terminals
+    gint   code_points;
+    gchar *ui_family;     // menus, tabs, dialogs, sidebar, status bar
+    gint   ui_points;
+} PhotonFonts;
+
+void photon_fonts_clear(PhotonFonts *fonts);                         // free the strings, zero it
+void photon_fonts_copy(PhotonFonts *dest, const PhotonFonts *src);    // dest must be clear
+
+void               photon_theme_set_fonts(PhotonTheme *theme, const PhotonFonts *fonts);   // copies
+const PhotonFonts *photon_theme_get_fonts(PhotonTheme *theme);
+
+// Zoom: steps on top of the chosen code size (0 = the chosen size).
+void photon_theme_set_zoom(PhotonTheme *theme, gint steps);
+gint photon_theme_get_zoom(PhotonTheme *theme);
+
+// The code size actually in use: chosen size + zoom, clamped.
+gint photon_theme_code_points(PhotonTheme *theme);
 
 #endif

@@ -180,6 +180,57 @@ test_theme_switch(PhotonTheme *theme, const gchar *dir) {
     photon_app_free(app);
 }
 
+// The font the editor of `doc` actually uses (family list + points)
+static void
+editor_font(PhotonDocument *doc, gchar **family, gint *points) {
+    GtkStyleContext *style = gtk_widget_get_style_context(GTK_WIDGET(photon_document_get_view(doc)));
+    PangoFontDescription *desc = NULL;
+    gtk_style_context_get(style, gtk_style_context_get_state(style), "font", &desc, NULL);
+    *family = g_strdup(pango_font_description_get_family(desc));
+    *points = pango_font_description_get_size(desc) / PANGO_SCALE;
+    pango_font_description_free(desc);
+}
+
+static void
+test_fonts(PhotonTheme *theme, const gchar *dir) {
+    PhotonApp *app = start(theme, dir, FALSE);
+    gchar *family = NULL;
+    gint points = 0;
+
+    editor_font(photon_app_current_doc(app), &family, &points);
+    CHECK(points == PHOTON_FONT_SIZE_DEFAULT);                 // default: the theme's font, 11pt
+    gchar *theme_family = family;
+
+    PhotonFonts fonts = { .code_family = "Courier New", .code_points = 15, .ui_points = 13 };
+    photon_app_set_fonts(app, &fonts, TRUE);
+    editor_font(photon_app_current_doc(app), &family, &points);
+    CHECK(g_str_has_prefix(family, "Courier New"));            // the choice wins over the theme
+    CHECK(points == 15);
+    g_free(family);
+
+    photon_app_zoom(app, +2);                                  // zoom works on top of it
+    editor_font(photon_app_current_doc(app), &family, &points);
+    CHECK(points == 17);
+    g_free(family);
+    photon_app_zoom(app, 0);                                   // 0 = the chosen size
+    CHECK(photon_theme_code_points(theme) == 15);
+    photon_app_free(app);
+
+    app = start(theme, dir, FALSE);                            // restored on the next launch
+    CHECK_STR(photon_theme_get_fonts(theme)->code_family, "Courier New");
+    CHECK(photon_theme_get_fonts(theme)->code_points == 15);
+    CHECK(photon_theme_get_fonts(theme)->ui_points == 13);
+
+    PhotonFonts none = { 0 };                                  // "Reset to Default"
+    photon_app_set_fonts(app, &none, TRUE);
+    editor_font(photon_app_current_doc(app), &family, &points);
+    CHECK_STR(family, theme_family);
+    CHECK(points == PHOTON_FONT_SIZE_DEFAULT);
+    g_free(family);
+    g_free(theme_family);
+    photon_app_free(app);
+}
+
 // Delete the test's temp folder (files and folders it made, nothing else)
 static void
 remove_tree(const gchar *path) {
@@ -211,6 +262,7 @@ main(int argc, char *argv[]) {
     test_language_picker(theme, dir);
     test_sidebar_refresh(theme, dir);
     test_theme_switch(theme, dir);
+    test_fonts(theme, dir);
 
     photon_theme_free(theme);
     g_free(config);

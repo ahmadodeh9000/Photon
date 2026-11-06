@@ -15,6 +15,7 @@
 #define AUTOSAVE_SECONDS 30
 #define SESSION_GROUP    "session"
 #define EDITOR_GROUP     "editor"
+#define FONTS_GROUP      "fonts"
 
 enum { ANSWER_SAVE = 1, ANSWER_DISCARD = 2 };   // GTK_RESPONSE_* are negative
 
@@ -410,9 +411,42 @@ photon_app_set_theme(PhotonApp *app, const gchar *theme_id) {
 
 void
 photon_app_zoom(PhotonApp *app, gint steps) {
-    gint size = steps == 0 ? PHOTON_FONT_SIZE_DEFAULT : photon_theme_get_font_size(app->theme) + steps;
-    photon_theme_set_font_size(app->theme, size);
-    photon_settings_set_int(app->settings, EDITOR_GROUP, "font_size", photon_theme_get_font_size(app->theme));
+    photon_theme_set_zoom(app->theme, steps == 0 ? 0 : photon_theme_get_zoom(app->theme) + steps);
+    photon_settings_set_int(app->settings, FONTS_GROUP, "zoom", photon_theme_get_zoom(app->theme));
+}
+
+void
+photon_app_set_fonts(PhotonApp *app, const PhotonFonts *fonts, gboolean save) {
+    photon_theme_set_fonts(app->theme, fonts);
+    if (!save) return;
+    photon_settings_set_string(app->settings, FONTS_GROUP, "code_family", fonts->code_family != NULL ? fonts->code_family : "");
+    photon_settings_set_int(app->settings, FONTS_GROUP, "code_size", fonts->code_points);
+    photon_settings_set_string(app->settings, FONTS_GROUP, "ui_family", fonts->ui_family != NULL ? fonts->ui_family : "");
+    photon_settings_set_int(app->settings, FONTS_GROUP, "ui_size", fonts->ui_points);
+}
+
+// "" in settings.ini = the theme's suggestion
+static gchar *
+saved_family(PhotonApp *app, const gchar *key) {
+    gchar *family = photon_settings_get_string(app->settings, FONTS_GROUP, key);
+    if (family != NULL && *family == '\0') g_clear_pointer(&family, g_free);
+    return family;
+}
+
+static void
+restore_fonts(PhotonApp *app) {
+    PhotonFonts fonts = {
+        .code_family = saved_family(app, "code_family"),
+        .ui_family = saved_family(app, "ui_family"),
+        .ui_points = photon_settings_get_int(app->settings, FONTS_GROUP, "ui_size", 0),
+    };
+    // Before the font picker, [editor] font_size held the zoomed code size
+    gint old_size = photon_settings_get_int(app->settings, EDITOR_GROUP, "font_size", 0);
+    fonts.code_points = photon_settings_get_int(app->settings, FONTS_GROUP, "code_size", old_size);
+
+    photon_theme_set_fonts(app->theme, &fonts);
+    photon_theme_set_zoom(app->theme, photon_settings_get_int(app->settings, FONTS_GROUP, "zoom", 0));
+    photon_fonts_clear(&fonts);
 }
 
 void
@@ -663,8 +697,7 @@ photon_app_new(const PhotonAppOptions *options) {
     g_signal_connect(app->window, "key-press-event", G_CALLBACK(on_window_key_press), app);
 
     create_modules(app, options);
-    photon_theme_set_font_size(app->theme,
-        photon_settings_get_int(app->settings, EDITOR_GROUP, "font_size", PHOTON_FONT_SIZE_DEFAULT));
+    restore_fonts(app);
 
     // Before the menus are built, so View > Theme shows the right one
     gchar *theme_id = options->theme_id != NULL ? g_strdup(options->theme_id)

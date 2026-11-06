@@ -38,6 +38,8 @@ src/theme.c/.h     theme registry (6 themes, most of them palettes for one Win95
                    scheme, terminal colors/font; restyles attached buffers and
                    terminals on a switch; font zoom
 src/about.c/.h     the About Photon dialog
+src/fontdialog.c/.h View > Fonts...: code + interface font pickers, live preview;
+                   the choice lives in theme.c (PhotonFonts) and settings [fonts]
 src/platform.c/.h  ALL OS-specific code (#ifdef __APPLE__ / __linux__), incl.
                    starting a detached Photon (setsid, or `open -a Photon.app`),
                    the socket folder and the log redirect

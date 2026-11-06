@@ -341,8 +341,9 @@ fill_template(const gchar *template, const Var *vars) {
 struct PhotonTheme {
     const ThemeInfo *info;
     GtkCssProvider  *chrome;     // the theme's CSS
-    GtkCssProvider  *font_size;  // "textview { font-size: Npt }", above chrome
-    gint             points;
+    GtkCssProvider  *fonts_css;  // the user's fonts + zoom, above the theme's CSS
+    PhotonFonts      fonts;      // the user's choice (NULL / 0 = the theme's)
+    gint             zoom;       // steps on top of fonts.code_points
     GSList          *buffers;    // weak: styled GtkSourceBuffers
     GSList          *terminals;  // weak: styled VteTerminals
 };
@@ -405,7 +406,14 @@ style_terminal(PhotonTheme *theme, VteTerminal *terminal) {
                             theme->info->term_mono ? 16 : 0);
     vte_terminal_set_color_cursor(terminal, &fg);
 
+    // The user's code font, else the theme's terminal font
     PangoFontDescription *font = pango_font_description_from_string(theme->info->term_font);
+    if (theme->fonts.code_family != NULL) {
+        gchar *families = g_strdup_printf("%s, monospace", theme->fonts.code_family);
+        pango_font_description_set_family(font, families);
+        g_free(families);
+    }
+    if (theme->fonts.code_points > 0) pango_font_description_set_size(font, theme->fonts.code_points * PANGO_SCALE);
     vte_terminal_set_font(terminal, font);
     pango_font_description_free(font);
 }
@@ -484,9 +492,9 @@ photon_theme_new(const gchar *data_dir, const gchar *id) {
     add_search_paths(data_dir);
 
     theme->chrome = add_provider(GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    theme->font_size = add_provider(GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    theme->fonts_css = add_provider(GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     if (id == NULL || !photon_theme_set(theme, id)) photon_theme_set(theme, PHOTON_THEME_DEFAULT);
-    photon_theme_set_font_size(theme, PHOTON_FONT_SIZE_DEFAULT);
+    photon_theme_set_zoom(theme, 0);
     return theme;
 }
 
@@ -500,9 +508,10 @@ photon_theme_free(PhotonTheme *theme) {
 
     GdkScreen *screen = gdk_screen_get_default();
     gtk_style_context_remove_provider_for_screen(screen, GTK_STYLE_PROVIDER(theme->chrome));
-    gtk_style_context_remove_provider_for_screen(screen, GTK_STYLE_PROVIDER(theme->font_size));
+    gtk_style_context_remove_provider_for_screen(screen, GTK_STYLE_PROVIDER(theme->fonts_css));
     g_object_unref(theme->chrome);
-    g_object_unref(theme->font_size);
+    g_object_unref(theme->fonts_css);
+    photon_fonts_clear(&theme->fonts);
     g_free(theme);
 }
 
@@ -532,14 +541,94 @@ photon_theme_make_well(GtkWidget *scrolled_window) {
 // Zoom
 // ---------------------------------------------------------------------
 void
-photon_theme_set_font_size(PhotonTheme *theme, gint points) {
-    theme->points = CLAMP(points, PHOTON_FONT_SIZE_MIN, PHOTON_FONT_SIZE_MAX);
-    gchar *css = g_strdup_printf("textview { font-size: %dpt; }", theme->points);
-    gtk_css_provider_load_from_data(theme->font_size, css, -1, NULL);
-    g_free(css);
+photon_fonts_clear(PhotonFonts *fonts) {
+    g_free(fonts->code_family);
+    g_free(fonts->ui_family);
+    *fonts = (PhotonFonts){ 0 };
+}
+
+void
+photon_fonts_copy(PhotonFonts *dest, const PhotonFonts *src) {
+    dest->code_family = g_strdup(src->code_family);
+    dest->code_points = src->code_points;
+    dest->ui_family = g_strdup(src->ui_family);
+    dest->ui_points = src->ui_points;
+}
+
+// A family name as a CSS string, with a generic fallback after it
+static gchar *
+css_family(const gchar *family, const gchar *generic) {
+    GString *out = g_string_new("\"");
+    for (const gchar *p = family; *p != '\0'; p++) {
+        if (*p == '"' || *p == '\\') g_string_append_c(out, '\\');
+        g_string_append_c(out, *p);
+    }
+    g_string_append_printf(out, "\", %s", generic);
+    return g_string_free(out, FALSE);
 }
 
 gint
-photon_theme_get_font_size(PhotonTheme *theme) {
-    return theme->points;
+photon_theme_code_points(PhotonTheme *theme) {
+    gint chosen = theme->fonts.code_points > 0 ? theme->fonts.code_points : PHOTON_FONT_SIZE_DEFAULT;
+    return CLAMP(chosen + theme->zoom, PHOTON_FONT_SIZE_MIN, PHOTON_FONT_SIZE_MAX);
+}
+
+// The user's fonts on top of the theme: this provider sits above the theme's CSS
+static void
+update_fonts(PhotonTheme *theme) {
+    GString *css = g_string_new(NULL);
+
+    if (theme->fonts.ui_family != NULL || theme->fonts.ui_points > 0) {
+        g_string_append(css, "window, dialog, popover, menubar, menu, menuitem, label, button, entry, "
+                             "tooltip, notebook, treeview, .photon-statusbar {");
+        if (theme->fonts.ui_family != NULL) {
+            gchar *family = css_family(theme->fonts.ui_family, "sans-serif");
+            g_string_append_printf(css, " font-family: %s;", family);
+            g_free(family);
+        }
+        if (theme->fonts.ui_points > 0) g_string_append_printf(css, " font-size: %dpt;", theme->fonts.ui_points);
+        g_string_append(css, " }");
+    }
+
+    g_string_append_printf(css, " textview { font-size: %dpt;", photon_theme_code_points(theme));
+    if (theme->fonts.code_family != NULL) {
+        gchar *family = css_family(theme->fonts.code_family, "monospace");
+        g_string_append_printf(css, " font-family: %s;", family);
+        g_free(family);
+    }
+    g_string_append(css, " }");
+
+    GError *error = NULL;
+    if (!gtk_css_provider_load_from_data(theme->fonts_css, css->str, -1, &error)) {
+        g_printerr("Font CSS failed to load: %s\n", error->message);
+        g_error_free(error);
+    }
+    g_string_free(css, TRUE);
+}
+
+void
+photon_theme_set_fonts(PhotonTheme *theme, const PhotonFonts *fonts) {
+    PhotonFonts copy = { 0 };
+    photon_fonts_copy(&copy, fonts);   // fonts may be theme->fonts itself
+    photon_fonts_clear(&theme->fonts);
+    theme->fonts = copy;
+    update_fonts(theme);
+    for (GSList *l = theme->terminals; l != NULL; l = l->next) style_terminal(theme, l->data);
+}
+
+const PhotonFonts *
+photon_theme_get_fonts(PhotonTheme *theme) {
+    return &theme->fonts;
+}
+
+void
+photon_theme_set_zoom(PhotonTheme *theme, gint steps) {
+    gint chosen = theme->fonts.code_points > 0 ? theme->fonts.code_points : PHOTON_FONT_SIZE_DEFAULT;
+    theme->zoom = CLAMP(steps, PHOTON_FONT_SIZE_MIN - chosen, PHOTON_FONT_SIZE_MAX - chosen);
+    update_fonts(theme);
+}
+
+gint
+photon_theme_get_zoom(PhotonTheme *theme) {
+    return theme->zoom;
 }

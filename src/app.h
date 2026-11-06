@@ -82,8 +82,12 @@ void photon_app_set_autosave(PhotonApp *app, gboolean on);
 // Switch theme (see theme.c) and remember it.
 void photon_app_set_theme(PhotonApp *app, const gchar *theme_id);
 
-// Zoom the code font by `steps` points; 0 resets it.
+// Zoom the code font by `steps` points on top of the chosen size; 0 resets
+// to the chosen size. Remembered.
 void photon_app_zoom(PhotonApp *app, gint steps);
+
+// Apply a font choice (View > Fonts...); `save` also writes settings.ini.
+void photon_app_set_fonts(PhotonApp *app, const PhotonFonts *fonts, gboolean save);
 
 // Run errors: open the file of the first error if needed, mark the lines
 // in every open document, jump to it and show its message.

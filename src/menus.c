@@ -9,6 +9,7 @@
 #include "menus.h"
 #include "about.h"
 #include "editing.h"
+#include "fontdialog.h"
 
 #include <vte/vte.h>
 
@@ -104,6 +105,7 @@ static void on_toggle_terminal(GtkWidget *i G_GNUC_UNUSED, gpointer app) { photo
 static void on_zoom_in(GtkWidget *i G_GNUC_UNUSED, gpointer app)         { photon_app_zoom(app, +1); }
 static void on_zoom_out(GtkWidget *i G_GNUC_UNUSED, gpointer app)        { photon_app_zoom(app, -1); }
 static void on_zoom_reset(GtkWidget *i G_GNUC_UNUSED, gpointer app)      { photon_app_zoom(app, 0); }
+static void on_fonts(GtkWidget *i G_GNUC_UNUSED, gpointer app)           { photon_font_dialog_run(app); }
 
 static void
 on_theme_toggled(GtkCheckMenuItem *item, gpointer app) {
@@ -222,6 +224,7 @@ build_view_menu(PhotonApp *app, GtkWidget *menu_bar, GtkAccelGroup *accel) {
     GtkWidget *zoom_out = add_item(menu, accel, "Zoom Out", "<Primary>minus", G_CALLBACK(on_zoom_out), app);
     add_shortcut(zoom_out, accel, "<Primary>KP_Subtract", FALSE);
     add_item(menu, accel, "Actual Size", "<Primary>0", G_CALLBACK(on_zoom_reset), app);
+    add_item(menu, accel, "Fonts...", "<Primary>comma", G_CALLBACK(on_fonts), app);
     add_separator(menu);
 
     // View > Theme > (radio items, one per theme in theme.c)
