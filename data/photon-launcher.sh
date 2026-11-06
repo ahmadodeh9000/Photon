@@ -25,4 +25,6 @@ for arg in "$@"; do
     case "$arg" in -psn_*) ;; *) set -- "$@" "$arg" ;; esac
 done
 
-exec "$here/photon-bin" "$@"
+# --detached: this IS the window (output to the log), not the `photon`
+# command's launcher, which would hand off to Photon.app again
+exec "$here/photon-bin" --detached "$@"

@@ -6,8 +6,13 @@ window's state lives in a `PhotonApp` (see `app.h`), and every callback gets
 it as `user_data`.
 
 ```
-src/main.c         startup: arguments (--version, --run, --smoke-test,
-                   --screenshot), finds the data folder, calls photon_app_new()
+src/main.c         startup: parse the command line, then either the launcher
+                   (cli.c) or the window here: data folder, photon_app_new()
+src/cli.c/.h       the command line, and the `photon` launcher: makes paths
+                   absolute, hands files to the running Photon or starts a
+                   detached one, waits for -w; never touches GTK
+src/remote.c/.h    one Photon at a time: a Unix socket (own thread + GMainContext,
+                   off GTK's loop) taking "open/run/wait/close/list" requests
 src/app.c/.h       main window: layout, documents (new/open/save/close/quit +
                    "unsaved changes?"), session, zoom, showing run errors
 src/menus.c/.h     the menu bar and EVERY shortcut (one line per item)
@@ -33,7 +38,9 @@ src/theme.c/.h     theme registry (6 themes, most of them palettes for one Win95
                    scheme, terminal colors/font; restyles attached buffers and
                    terminals on a switch; font zoom
 src/about.c/.h     the About Photon dialog
-src/platform.c/.h  ALL OS-specific code (#ifdef __APPLE__ / __linux__)
+src/platform.c/.h  ALL OS-specific code (#ifdef __APPLE__ / __linux__), incl.
+                   starting a detached Photon (setsid, or `open -a Photon.app`),
+                   the socket folder and the log redirect
 
 lang/             GtkSourceView language specs (lunar.lang)
 styles/           GtkSourceView style schemes, one per theme (<theme id>.xml)
@@ -206,3 +213,18 @@ plain CSS and `.vars = NULL`, like `VSCODE_CSS`. Photon's own widgets have
 CSS classes: `.photon-titlebar`, `.photon-statusbar`, `.photon-search`,
 `.photon-sunken` (editor / sidebar / terminal wells), `.photon-tab-close`,
 `.photon-about-box`, `.photon-about-well`.
+
+## The `photon` command
+
+`photon FILE` runs the same program in **launcher mode** (no GTK): it makes
+the paths absolute, connects to the running Photon's socket (remote.c) and
+sends `open <path>` lines, then exits. With no Photon running it starts one
+with `--detached` (platform.c: its own session on Linux, `open -a Photon.app`
+on macOS so the Dock shows it) and exits; the detached window writes its
+output to `photon.log` in the cache folder. `photon -w FILE` sends `wait`
+and blocks until the reply `closed <path>`, which app.c triggers when that
+tab closes (`photon_remote_document_closed`).
+
+The window runs in **GUI mode**: `--detached`, `--foreground`, or the test
+flags (`--smoke-test`, `--screenshot`, which never open the socket).
+`tests/test_launcher.py` checks the launcher returns within a second.

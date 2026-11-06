@@ -9,9 +9,20 @@ and macOS.
 ```
 photon                  # open in the current directory
 photon main.lunar       # open a file (it can be a new one)
-photon ~/some/project   # open a folder, with the file tree shown
+photon a.c b.py         # several at once
+photon ~/some/project   # open a folder in a new window, with the file tree shown
 photon --run game.lunar # open a file and run it right away
+photon -w notes.txt     # wait until that tab is closed
 ```
+
+Like VS Code's `code`, `photon` returns to your prompt at once and prints
+nothing: the window runs on its own and survives closing the terminal (its
+output goes to `photon.log` in your cache folder, e.g. `~/.cache/photon/`).
+If Photon is already open, the files open there as new tabs. `photon -w`
+is for tools that wait for an editor, e.g.
+`git config --global core.editor "photon -w"`. Use `--foreground` to keep
+the window attached to the terminal while working on Photon itself, and
+`photon --status` to list what the running Photon has open.
 
 ---
 

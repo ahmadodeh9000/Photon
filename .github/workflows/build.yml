@@ -33,7 +33,7 @@ jobs:
       - name: Build (-Wall -Wextra -Werror)
         run: make WERROR=1
 
-      - name: Smoke test and unit tests
+      - name: Smoke test and unit tests (incl. the photon launcher)
         run: |
           $GUI make check
           $GUI make test
@@ -45,12 +45,33 @@ jobs:
             $GUI ./Photon --theme "$theme" --screenshot "photon-$theme-${{ matrix.os }}.png" tests/samples/hello.lunar
           done
 
-      - name: install.sh (into a temp folder) and uninstall
+      - name: install.sh (into a temp folder), the installed launcher, uninstall
         run: |
           prefix="$RUNNER_TEMP/photon"
           ./install.sh --prefix "$prefix" --yes
           "$prefix/bin/photon" --version
           (cd "$RUNNER_TEMP" && $GUI "$prefix/bin/photon" --smoke-test)
+          if [ "$RUNNER_OS" = Linux ]; then
+            $GUI python3 tests/test_launcher.py "$prefix/bin/photon"
+          else
+            # The launcher returns at once and the window runs as Photon.app
+            python3 - "$prefix/bin/photon" <<'EOF'
+          import subprocess, sys, time
+          start = time.monotonic()
+          done = subprocess.run([sys.argv[1], "tests/samples/hello.lunar"], capture_output=True)
+          took = time.monotonic() - start
+          print(f"launcher returned in {took:.2f}s, exit {done.returncode}, output {done.stdout + done.stderr!r}")
+          assert took < 1.0 and done.returncode == 0 and not done.stdout and not done.stderr
+          for _ in range(100):
+              apps = subprocess.run(["lsappinfo", "list"], capture_output=True, text=True).stdout
+              if "io.github.ahmadodeh9000.photon" in apps:
+                  break
+              time.sleep(0.2)
+          assert "io.github.ahmadodeh9000.photon" in apps, "Photon.app never showed up"
+          print("running as Photon.app (io.github.ahmadodeh9000.photon)")
+          EOF
+            pkill -f 'Photon.app/Contents/MacOS/photon-bin' || true
+          fi
           ./install.sh --prefix "$prefix" --uninstall
           test ! -e "$prefix/bin/photon"
 
@@ -61,3 +82,25 @@ jobs:
           name: screenshots-${{ matrix.os }}
           path: photon-*.png
           if-no-files-found: ignore
+
+  debian:
+    runs-on: ubuntu-latest
+    container: debian:stable
+    steps:
+      - name: Install dependencies (Debian)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential pkg-config git ca-certificates \
+            libgtk-3-dev libgtksourceview-4-dev libvte-2.91-dev xvfb xauth python3 procps
+
+      - uses: actions/checkout@v4
+
+      - name: Build, test, install with install.sh, test the installed launcher
+        run: |
+          make WERROR=1
+          xvfb-run -a make check
+          xvfb-run -a make test
+          ./install.sh --prefix /opt/photon --yes
+          xvfb-run -a python3 tests/test_launcher.py /opt/photon/bin/photon
+          ./install.sh --prefix /opt/photon --uninstall
+          test ! -e /opt/photon/bin/photon

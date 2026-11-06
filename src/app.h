@@ -18,6 +18,7 @@
 #include "completion.h"
 #include "document.h"
 #include "panel.h"
+#include "remote.h"
 #include "runner.h"
 #include "search.h"
 #include "settings.h"
@@ -37,6 +38,7 @@ struct PhotonApp {
     PhotonPanel      *panel;
     PhotonStatusbar  *statusbar;
     PhotonRunner     *runner;
+    PhotonRemote     *remote;       // single-instance socket; NULL if not serving
     GtkWidget        *title_strip;  // Win95 title bar above the tabs (some themes)
     GtkWidget        *title_label;
     gchar            *root_dir;     // sidebar root; default folder for Save As
@@ -48,12 +50,13 @@ struct PhotonApp {
 
 typedef struct PhotonAppOptions {
     const gchar *root_dir;      // sidebar root and terminal cwd (required)
-    const gchar *file;          // file to open, may not exist yet; NULL = none
+    const gchar *const *files;  // files to open (may not exist yet), NULL-terminated; may be NULL
     gboolean     show_sidebar;  // TRUE when Photon was started on a folder
     PhotonTheme *theme;         // required, outlives the app
     gboolean     use_session;   // reopen last files / remember open files
     gboolean     read_only;     // never write settings.ini (smoke tests)
     const gchar *theme_id;      // theme for this run (--theme); NULL = the saved one
+    gboolean     serve_remote;  // be the Photon that `photon FILE` talks to (remote.c)
 } PhotonAppOptions;
 
 PhotonApp *photon_app_new(const PhotonAppOptions *options);

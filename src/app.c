@@ -135,9 +135,12 @@ add_document(PhotonApp *app, PhotonDocument *doc) {
 
 static void
 remove_document(PhotonApp *app, PhotonDocument *doc) {
+    gchar *path = g_strdup(photon_document_get_path(doc));
     g_signal_handlers_disconnect_by_data(photon_document_get_buffer(doc), app);
     photon_completion_detach(app->completion, doc);
     photon_tabs_close(app->tabs, doc);
+    photon_remote_document_closed(app->remote, path);   // releases `photon -w`
+    g_free(path);
 
     // Always keep one tab, so "the current document" exists
     if (!app->quitting && photon_tabs_count(app->tabs) == 0) photon_app_new_document(app, photon_languages_find("lunar"));
@@ -556,19 +559,75 @@ build_layout(PhotonApp *app) {
     return outer;
 }
 
+// Open a file, or a tab for one that doesn't exist yet (Save writes there)
+static void
+open_or_create(PhotonApp *app, const gchar *path) {
+    if (g_file_test(path, G_FILE_TEST_EXISTS)) {
+        photon_app_open_file(app, path);
+        return;
+    }
+    PhotonDocument *open = photon_tabs_find(app->tabs, path);
+    if (open != NULL) {
+        photon_tabs_select(app->tabs, open);
+        return;
+    }
+    PhotonDocument *doc = photon_app_new_document(app, NULL);
+    photon_document_set_path(doc, path);
+}
+
 static void
 open_initial_files(PhotonApp *app, const PhotonAppOptions *options) {
     if (app->use_session) restore_session(app);
-
-    if (options->file != NULL && g_file_test(options->file, G_FILE_TEST_EXISTS)) {
-        photon_app_open_file(app, options->file);
-    } else if (options->file != NULL) {
-        // Not on disk yet: remember the name so Save (not Save As) writes there
-        PhotonDocument *doc = photon_app_new_document(app, NULL);
-        photon_document_set_path(doc, options->file);
+    for (gint i = 0; options->files != NULL && options->files[i] != NULL; i++) {
+        open_or_create(app, options->files[i]);
     }
-
     if (photon_tabs_count(app->tabs) == 0) photon_app_new_document(app, photon_languages_find("lunar"));
+}
+
+// ---------------------------------------------------------------------
+// Requests from the `photon` command (remote.c)
+// ---------------------------------------------------------------------
+static void
+remote_open(const gchar *path, gboolean run, gpointer user_data) {
+    PhotonApp *app = user_data;
+    open_or_create(app, path);
+    if (run) photon_runner_run(app->runner);
+}
+
+static void
+remote_close(const gchar *path, gpointer user_data) {
+    PhotonApp *app = user_data;
+    PhotonDocument *doc = photon_tabs_find(app->tabs, path);
+    if (doc != NULL) photon_app_close_document(app, doc);
+}
+
+static gchar **
+remote_list(gpointer user_data) {
+    PhotonApp *app = user_data;
+    GPtrArray *paths = g_ptr_array_new();
+    GList *docs = photon_tabs_list(app->tabs);
+    for (GList *l = docs; l != NULL; l = l->next) {
+        const gchar *path = photon_document_get_path(l->data);
+        if (path != NULL) g_ptr_array_add(paths, g_strdup(path));
+    }
+    g_list_free(docs);
+    g_ptr_array_add(paths, NULL);
+    return (gchar **)g_ptr_array_free(paths, FALSE);
+}
+
+static void
+remote_present(gpointer user_data) {
+    PhotonApp *app = user_data;
+    gtk_window_present(GTK_WINDOW(app->window));   // also activates the app on macOS
+}
+
+static void
+start_remote(PhotonApp *app) {
+    PhotonRemoteHandlers handlers = {
+        .open = remote_open, .close = remote_close, .list = remote_list,
+        .present = remote_present, .user_data = app,
+    };
+    app->remote = photon_remote_serve(&handlers);   // NULL: another Photon serves; fine
 }
 
 static void
@@ -614,6 +673,7 @@ photon_app_new(const PhotonAppOptions *options) {
     g_free(theme_id);
     gtk_container_add(GTK_CONTAINER(app->window), build_layout(app));
     open_initial_files(app, options);
+    if (options->serve_remote) start_remote(app);
 
     // Show everything, then hide what starts hidden
     gtk_widget_show_all(app->window);
@@ -630,6 +690,8 @@ photon_app_free(PhotonApp *app) {
     if (app == NULL) return;
     app->quitting = TRUE;
     photon_app_set_autosave(app, FALSE);
+    photon_remote_free(app->remote);   // waiting `photon -w` commands return
+    app->remote = NULL;
 
     // Modules drop their refs first (disconnecting their signals); the
     // window then destroys the widgets for real.

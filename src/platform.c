@@ -8,6 +8,10 @@
  */
 #include "platform.h"
 
+#include <fcntl.h>
+#include <glib/gstdio.h>
+#include <unistd.h>
+
 #ifdef __APPLE__
 #include <limits.h>
 #include <mach-o/dyld.h>
@@ -52,6 +56,11 @@ read_executable_path(void) {
 #else
     return NULL;
 #endif
+}
+
+gchar *
+photon_platform_executable_path(void) {
+    return read_executable_path();
 }
 
 gchar *
@@ -102,6 +111,128 @@ photon_platform_data_dir(void) {
 
     if (is_data_dir(PHOTON_DATADIR)) return g_strdup(PHOTON_DATADIR);
     return NULL;
+}
+
+// ---------------------------------------------------------------------
+// Detached start
+// ---------------------------------------------------------------------
+
+// Child side of the spawn: a new session, so closing the terminal (SIGHUP
+// to its session) doesn't reach Photon
+static void
+new_session(gpointer user_data G_GNUC_UNUSED) {
+    setsid();
+}
+
+#define SPAWN_QUIET (G_SPAWN_STDIN_FROM_DEV_NULL | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL)
+
+#ifdef __APPLE__
+// Photon.app that holds this executable (…/Photon.app/Contents/MacOS/x), or NULL
+static gchar *
+app_bundle(const gchar *exe) {
+    gchar *macos = g_path_get_dirname(exe);
+    gchar *contents = g_path_get_dirname(macos);
+    gchar *bundle = g_path_get_dirname(contents);
+    gchar *macos_name = g_path_get_basename(macos);
+    gboolean inside = g_str_equal(macos_name, "MacOS") && g_str_has_suffix(bundle, ".app");
+    g_free(macos_name);
+    g_free(contents);
+    g_free(macos);
+    if (inside) return bundle;
+    g_free(bundle);
+    return NULL;
+}
+
+// open -a Photon.app --args ARGS: LaunchServices starts the bundle's launcher
+static gboolean
+start_bundle(const gchar *bundle, gchar **args, GError **error) {
+    GPtrArray *argv = g_ptr_array_new();
+    g_ptr_array_add(argv, "/usr/bin/open");
+    g_ptr_array_add(argv, "-a");
+    g_ptr_array_add(argv, (gpointer)bundle);
+    g_ptr_array_add(argv, "--args");
+    for (gint i = 0; args != NULL && args[i] != NULL; i++) g_ptr_array_add(argv, args[i]);
+    g_ptr_array_add(argv, NULL);
+
+    gboolean ok = g_spawn_async(NULL, (gchar **)argv->pdata, NULL, SPAWN_QUIET, NULL, NULL, NULL, error);
+    g_ptr_array_free(argv, TRUE);
+    return ok;
+}
+#endif
+
+gboolean
+photon_platform_start_detached(gchar **args, GError **error) {
+    gchar *exe = read_executable_path();
+    if (exe == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_NOENT, "can't find the Photon program");
+        return FALSE;
+    }
+
+#ifdef __APPLE__
+    gchar *bundle = app_bundle(exe);
+    if (bundle != NULL) {
+        gboolean ok = start_bundle(bundle, args, error);
+        g_free(bundle);
+        g_free(exe);
+        return ok;
+    }
+#endif
+
+    GPtrArray *argv = g_ptr_array_new();
+    g_ptr_array_add(argv, exe);
+    for (gint i = 0; args != NULL && args[i] != NULL; i++) g_ptr_array_add(argv, args[i]);
+    g_ptr_array_add(argv, NULL);
+
+    // Without G_SPAWN_DO_NOT_REAP_CHILD GLib forks twice: nobody has to wait for Photon
+    gboolean ok = g_spawn_async(NULL, (gchar **)argv->pdata, NULL, SPAWN_QUIET, new_session, NULL, NULL, error);
+    g_ptr_array_free(argv, TRUE);
+    g_free(exe);
+    return ok;
+}
+
+gchar *
+photon_platform_runtime_dir(void) {
+    const gchar *override = g_getenv("PHOTON_RUNTIME_DIR");
+    gchar *dir;
+    if (override != NULL && *override != '\0') {
+        dir = g_strdup(override);
+    } else {
+#ifdef __APPLE__
+        dir = g_build_filename(g_get_home_dir(), "Library", "Caches", "photon", NULL);
+#else
+        dir = g_build_filename(g_get_user_runtime_dir(), "photon", NULL);
+#endif
+    }
+    g_mkdir_with_parents(dir, 0700);
+    return dir;
+}
+
+#define LOG_MAX_BYTES (1024 * 1024)
+
+void
+photon_platform_redirect_output(const gchar *log_path) {
+    gchar *dir = g_path_get_dirname(log_path);
+    g_mkdir_with_parents(dir, 0700);
+    g_free(dir);
+
+    GStatBuf st;
+    if (g_stat(log_path, &st) == 0 && st.st_size > LOG_MAX_BYTES) {
+        gchar *old = g_strconcat(log_path, ".1", NULL);
+        g_rename(log_path, old);
+        g_free(old);
+    }
+
+    int null_fd = open("/dev/null", O_RDONLY);
+    if (null_fd >= 0) {
+        dup2(null_fd, STDIN_FILENO);
+        close(null_fd);
+    }
+    int log_fd = open(log_path, O_WRONLY | O_CREAT | O_APPEND, 0600);
+    if (log_fd >= 0) {
+        dup2(log_fd, STDOUT_FILENO);
+        dup2(log_fd, STDERR_FILENO);
+        close(log_fd);
+    }
 }
 
 gboolean

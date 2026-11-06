@@ -23,7 +23,7 @@ APP      := $(BUILDDIR)/Photon.app
 ICON_SIZES := 16 32 48 64 128 256 512
 UNAME_S  := $(shell uname -s)
 
-PKGS := gtk+-3.0 gtksourceview-4 vte-2.91
+PKGS := gtk+-3.0 gtksourceview-4 vte-2.91 gio-unix-2.0   # gio-unix comes with GLib
 
 # macOS: let pkg-config see Homebrew's .pc files (Apple Silicon or Intel).
 # Set inline because make 3.81 (Apple's) doesn't export vars to $(shell).
@@ -107,8 +107,9 @@ check: $(TARGET)
 	./$(TARGET) --version
 	./$(TARGET) --smoke-test tests/samples/hello.lunar
 
-test: $(TESTS)
+test: $(TESTS) $(TARGET)
 	@for t in $(TESTS); do ./$$t || exit 1; done
+	@python3 tests/test_launcher.py ./$(TARGET)
 
 # ---------------------------------------------------------------------
 # install / uninstall
@@ -164,7 +165,9 @@ endif
 	install -m 644 icons/photon.png $(APP)/Contents/Resources/icons/photon.png
 	sed 's|@VERSION@|$(VERSION)|g' data/Info.plist.in > $@   # last: marks the bundle complete
 
-# The `photon` command runs the program inside the bundle, so the Dock shows its icon
+# The `photon` command execs the program inside the bundle (a symlink wouldn't do:
+# the program finds Photon.app from its own path). In launcher mode it starts the
+# window through `open -a Photon.app`, so the Dock shows Photon with its icon.
 install-app: $(APP_STAMP)
 	install -d $(DESTDIR)$(APPDIR) $(DESTDIR)$(PREFIX)/bin
 	rm -rf $(DESTDIR)$(APPDIR)/Photon.app

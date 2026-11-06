@@ -180,6 +180,23 @@ test_theme_switch(PhotonTheme *theme, const gchar *dir) {
     photon_app_free(app);
 }
 
+// Delete the test's temp folder (files and folders it made, nothing else)
+static void
+remove_tree(const gchar *path) {
+    GDir *dir = g_dir_open(path, 0, NULL);
+    if (dir != NULL) {
+        const gchar *name;
+        while ((name = g_dir_read_name(dir)) != NULL) {
+            gchar *child = g_build_filename(path, name, NULL);
+            if (g_file_test(child, G_FILE_TEST_IS_DIR) && !g_file_test(child, G_FILE_TEST_IS_SYMLINK)) remove_tree(child);
+            else g_unlink(child);
+            g_free(child);
+        }
+        g_dir_close(dir);
+    }
+    g_rmdir(path);
+}
+
 int
 main(int argc, char *argv[]) {
     gchar *dir = g_dir_make_tmp("photon-test-XXXXXX", NULL);
@@ -197,6 +214,7 @@ main(int argc, char *argv[]) {
 
     photon_theme_free(theme);
     g_free(config);
+    remove_tree(dir);
     g_free(dir);
     return check_finish("test_app");
 }
