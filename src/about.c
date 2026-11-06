@@ -7,6 +7,7 @@
  * about: the About Photon dialog. See about.h.
  */
 #include "about.h"
+#include "platform.h"
 
 #ifndef PHOTON_VERSION
 #define PHOTON_VERSION "dev"
@@ -30,11 +31,31 @@ line(const gchar *markup) {
     return label;
 }
 
-// The program icon, 48 px, if the icon theme has it
+GdkPixbuf *
+photon_about_logo(gint size) {
+    GdkPixbuf *logo = NULL;
+    gchar *data_dir = photon_platform_data_dir();
+    if (data_dir != NULL) {
+        gchar *path = g_build_filename(data_dir, "icons", "photon.png", NULL);
+        // Pixel art: scale with nearest-neighbour so the pixels stay square
+        GdkPixbuf *full = gdk_pixbuf_new_from_file(path, NULL);
+        if (full != NULL) {
+            logo = gdk_pixbuf_scale_simple(full, size, size, GDK_INTERP_NEAREST);
+            g_object_unref(full);
+        }
+        g_free(path);
+        g_free(data_dir);
+    }
+    if (logo == NULL) {
+        logo = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(), "photon", size, GTK_ICON_LOOKUP_FORCE_SIZE, NULL);
+    }
+    return logo;
+}
+
+// The logo, 64 px (two pixels per pixel of the 32x32 art)
 static GtkWidget *
 icon(void) {
-    GdkPixbuf *pixbuf = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(), "photon", 48,
-                                                 GTK_ICON_LOOKUP_FORCE_SIZE, NULL);
+    GdkPixbuf *pixbuf = photon_about_logo(64);
     GtkWidget *image = pixbuf != NULL ? gtk_image_new_from_pixbuf(pixbuf) : gtk_image_new();
     if (pixbuf != NULL) g_object_unref(pixbuf);
     gtk_widget_set_valign(image, GTK_ALIGN_START);

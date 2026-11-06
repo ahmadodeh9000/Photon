@@ -7,6 +7,7 @@
  * app: main window, documents, session. See app.h.
  */
 #include "app.h"
+#include "about.h"
 #include "menus.h"
 #include "platform.h"
 
@@ -692,7 +693,13 @@ photon_app_new(const PhotonAppOptions *options) {
 
     app->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_default_size(GTK_WINDOW(app->window), 1100, 700);
-    gtk_window_set_icon_name(GTK_WINDOW(app->window), "photon");
+    GdkPixbuf *logo = photon_about_logo(256);   // ours, not whatever the icon theme has
+    if (logo != NULL) {
+        gtk_window_set_icon(GTK_WINDOW(app->window), logo);
+        g_object_unref(logo);
+    } else {
+        gtk_window_set_icon_name(GTK_WINDOW(app->window), "photon");
+    }
     g_signal_connect(app->window, "delete-event", G_CALLBACK(on_delete_event), app);
     g_signal_connect(app->window, "key-press-event", G_CALLBACK(on_window_key_press), app);
 

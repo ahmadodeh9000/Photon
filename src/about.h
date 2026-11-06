@@ -15,4 +15,9 @@
 
 void photon_about_show(GtkWindow *parent);
 
+// Photon's logo at `size` px (newly referenced), from our own icons/ folder,
+// so an older icon installed in a system icon theme can't take its place.
+// Falls back to the icon theme; NULL if neither has it.
+GdkPixbuf *photon_about_logo(gint size);
+
 #endif
